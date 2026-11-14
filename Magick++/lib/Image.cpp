@@ -12,12 +12,6 @@
 #define MAGICK_PLUSPLUS_IMPLEMENTATION 1
 
 #include "Magick++/Include.h"
-#include <cstdlib>
-#include <string>
-#include <string.h>
-#include <errno.h>
-#include <math.h>
-
 #include "Magick++/Image.h"
 #include "Magick++/Functions.h"
 #include "Magick++/Pixels.h"
@@ -26,8 +20,7 @@
 
 using namespace std;
 
-#define AbsoluteValue(x)  ((x) < 0 ? -(x) : (x))
-#define MagickPI  3.14159265358979323846264338327950288419716939937510
+#define MagickPI     3.1415926535897932384626433832795028841971693993751058209749445923078164062
 #define DegreesToRadians(x)  (MagickPI*(x)/180.0)
 #define ThrowImageException ThrowPPException(quiet())
 
@@ -674,7 +667,7 @@ Magick::Point Magick::Image::density(void) const
 {
   if (isValid())
     {
-      ssize_t
+      double
         x_resolution=72,
         y_resolution=72;
 
@@ -684,7 +677,7 @@ Magick::Point Magick::Image::density(void) const
       if (constImage()->resolution.y > 0.0)
         y_resolution=constImage()->resolution.y;
 
-      return(Point(x_resolution,y_resolution));
+      return(Point(x_resolution, y_resolution));
     }
 
   return(constOptions()->density());
@@ -1511,7 +1504,7 @@ void Magick::Image::strokeWidth(const double strokeWidth_)
 
   modifyImage();
   options()->strokeWidth(strokeWidth_);
-  FormatLocaleString(value,MagickPathExtent,"%.20g",strokeWidth_);
+  FormatLocaleString(value,MagickPathExtent,"%.17g",strokeWidth_);
   (void) SetImageArtifact(image(),"strokewidth",value);
 }
 
@@ -1843,7 +1836,7 @@ void Magick::Image::alpha(const unsigned int alpha_)
 {
   modifyImage();
   GetPPException;
-  SetImageAlpha(image(),alpha_,exceptionInfo);
+  SetImageAlpha(image(),(Quantum) alpha_,exceptionInfo);
   ThrowImageException;
 }
 
@@ -3526,7 +3519,7 @@ void Magick::Image::liquidRescale(const Geometry &geometry_)
     &height);
 
   GetPPException;
-  newImage=LiquidRescaleImage(image(),width,height,x,y,exceptionInfo);
+  newImage=LiquidRescaleImage(image(),width,height,(double) x,(double) y,exceptionInfo);
   replaceImage(newImage);
   ThrowImageException;
 }
@@ -3569,9 +3562,14 @@ void Magick::Image::magnify(void)
 
 void Magick::Image::map(const Image &mapImage_,const bool dither_)
 {
+  map(mapImage_, dither_ ? RiemersmaDitherMethod : NoDitherMethod);
+}
+
+void Magick::Image::map(const Image &mapImage_,const DitherMethod ditherMethod_)
+{
   modifyImage();
   GetPPException;
-  options()->quantizeDither(dither_);
+  options()->quantizeDither(ditherMethod_);
   RemapImage(options()->quantizeInfo(),image(),mapImage_.constImage(),
     exceptionInfo);
   ThrowImageException;
@@ -3963,8 +3961,8 @@ void Magick::Image::process(std::string name_,const ssize_t argc,
   modifyImage();
 
   GetPPException;
-  (void) InvokeDynamicImageFilter(name_.c_str(),&image(),argc,argv,
-      exceptionInfo);
+  (void) InvokeDynamicImageFilter(name_.c_str(),&image(),(int) argc,argv,
+    exceptionInfo);
   ThrowImageException;
 }
 

@@ -9,11 +9,9 @@
 #define MAGICKCORE_IMPLEMENTATION  1
 #define MAGICK_PLUSPLUS_IMPLEMENTATION 1
 
-#include <string>
-#include <sstream>
-
 #include "Magick++/SecurityPolicy.h"
 #include "Magick++/Exception.h"
+#include <sstream>
 
 using namespace std;
 

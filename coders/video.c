@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -42,6 +42,7 @@
 #include "MagickCore/blob.h"
 #include "MagickCore/blob-private.h"
 #include "MagickCore/constitute.h"
+#include "MagickCore/constitute-private.h"
 #include "MagickCore/delegate.h"
 #include "MagickCore/exception.h"
 #include "MagickCore/exception-private.h"
@@ -55,6 +56,8 @@
 #include "MagickCore/memory_.h"
 #include "MagickCore/module.h"
 #include "MagickCore/option.h"
+#include "MagickCore/policy.h"
+#include "MagickCore/policy-private.h"
 #include "MagickCore/resource_.h"
 #include "MagickCore/quantum-private.h"
 #include "MagickCore/static.h"
@@ -210,6 +213,8 @@ static Image *ReadVIDEOImage(const ImageInfo *image_info,
   images=(Image *) NULL;
   read_info=CloneImageInfo(image_info);
   delegate_info=GetDelegateInfo("video:decode",(char *) NULL,exception);
+  if (delegate_info == (const DelegateInfo *) NULL)
+    delegate_info=GetDelegateInfo("mpeg:decode",(char *) NULL,exception);  /* legacy */
   if (delegate_info != (const DelegateInfo *) NULL)
     {
       char
@@ -232,7 +237,7 @@ static Image *ReadVIDEOImage(const ImageInfo *image_info,
       if (option != (const char *) NULL)
         {
           FormatSanitizedDelegateOption(command,MagickPathExtent,
-            " -vsync \"%s\""," -vsync '%s'",option);
+            " -fps_mode \"%s\""," -fps_mode '%s'",option);
           (void) ConcatenateMagickString(options,command,MagickPathExtent);
         }
       option=GetImageOption(image_info,"video:pixel-format");
@@ -248,7 +253,7 @@ static Image *ReadVIDEOImage(const ImageInfo *image_info,
             MagickPathExtent);
       intermediate_format=GetIntermediateFormat(image_info);
       (void) FormatLocaleString(command,MagickPathExtent,
-        " -vcodec %s -lossless 1",intermediate_format);
+        " -vcodec %s",intermediate_format);
       (void) ConcatenateMagickString(options,command,MagickPathExtent);
       AcquireUniqueFilename(read_info->unique);
       (void) AcquireUniqueSymbolicLink(image_info->filename,
@@ -266,7 +271,7 @@ static Image *ReadVIDEOImage(const ImageInfo *image_info,
             MagickPathExtent);
           (void) CopyMagickString(read_info->filename,read_info->unique,
             MagickPathExtent);
-          images=ReadImage(read_info,exception);
+          images=ReadImageWithoutPostProcessing(read_info,exception);
         }
       else
         if (*message != '\0')
@@ -328,11 +333,13 @@ ModuleExport size_t RegisterVIDEOImage(void)
   entry->decoder=(DecodeImageHandler *) ReadVIDEOImage;
   entry->encoder=(EncodeImageHandler *) WriteVIDEOImage;
   entry->magick=(IsImageFormatHandler *) IsPNG;
+  entry->mime_type=ConstantString("image/apng");
   entry->flags^=CoderBlobSupportFlag;
   entry->flags|=CoderDecoderSeekableStreamFlag;
   (void) RegisterMagickInfo(entry);
   entry=AcquireMagickInfo("VIDEO","AVI","Microsoft Audio/Visual Interleaved");
   entry->decoder=(DecodeImageHandler *) ReadVIDEOImage;
+  entry->mime_type=ConstantString("image/avif-sequence");
   entry->flags^=CoderBlobSupportFlag;
   entry->flags|=CoderDecoderSeekableStreamFlag;
   (void) RegisterMagickInfo(entry);
@@ -474,7 +481,7 @@ ModuleExport void UnregisterVIDEOImage(void)
 %
 */
 static MagickBooleanType CopyDelegateFile(const char *source,
-  const char *destination)
+  const char *destination,ExceptionInfo *exception)
 {
   int
     destination_file,
@@ -499,17 +506,25 @@ static MagickBooleanType CopyDelegateFile(const char *source,
   /*
     Copy source file to destination.
   */
+  if (IsPathAuthorized(WritePolicyRights,destination) == MagickFalse)
+    ThrowPolicyException(destination,MagickFalse);
   if (strcmp(destination,"-") == 0)
-    destination_file=fileno(stdout);
+    {
+      destination_file=fileno(stdout);
+#if defined(MAGICKCORE_WINDOWS_SUPPORT) || defined(__OS2__)
+      (void) setmode(destination_file,O_BINARY);
+#endif
+    }
   else
-    destination_file=open_utf8(destination,O_WRONLY | O_BINARY | O_CREAT |
+    destination_file=open_utf8(destination,O_WRONLY | O_CLOEXEC | O_BINARY | O_CREAT |
       O_TRUNC,S_MODE);
   if (destination_file == -1)
     return(MagickFalse);
-  source_file=open_utf8(source,O_RDONLY | O_BINARY,0);
+  source_file=open_utf8(source,O_RDONLY | O_CLOEXEC | O_BINARY,0);
   if (source_file == -1)
     {
-      (void) close(destination_file);
+      if (strcmp(destination,"-") != 0)
+        (void) close_utf8(destination_file);
       return(MagickFalse);
     }
   quantum=(size_t) MagickMaxBufferExtent;
@@ -519,8 +534,9 @@ static MagickBooleanType CopyDelegateFile(const char *source,
   buffer=(unsigned char *) AcquireQuantumMemory(quantum,sizeof(*buffer));
   if (buffer == (unsigned char *) NULL)
     {
-      (void) close(source_file);
-      (void) close(destination_file);
+      (void) close_utf8(source_file);
+      if (strcmp(destination,"-") != 0)
+        (void) close_utf8(destination_file);
       return(MagickFalse);
     }
   length=0;
@@ -535,8 +551,8 @@ static MagickBooleanType CopyDelegateFile(const char *source,
       break;
   }
   if (strcmp(destination,"-") != 0)
-    (void) close(destination_file);
-  (void) close(source_file);
+    (void) close_utf8(destination_file);
+  (void) close_utf8(source_file);
   buffer=(unsigned char *) RelinquishMagickMemory(buffer);
   return(i != 0 ? MagickTrue : MagickFalse);
 }
@@ -576,7 +592,8 @@ static MagickBooleanType WriteVIDEOImage(const ImageInfo *image_info,
     scene;
 
   ssize_t
-    i;
+    i,
+    length_of_delay_loop;
 
   unsigned char
     *blob;
@@ -600,7 +617,7 @@ static MagickBooleanType WriteVIDEOImage(const ImageInfo *image_info,
     return(MagickFalse);
   file=AcquireUniqueFileResource(basename);
   if (file != -1)
-    file=close(file)-1;
+    file=close_utf8(file)-1;
   (void) FormatLocaleString(clone_images->filename,MagickPathExtent,"%s",
     basename);
   count=0;
@@ -618,7 +635,11 @@ static MagickBooleanType WriteVIDEOImage(const ImageInfo *image_info,
     length=0;
     scene=p->scene;
     delay=100.0*p->delay/MagickMax(1.0*p->ticks_per_second,1.0);
-    for (i=0; i < (ssize_t) MagickMax((1.0*delay+1.0)/3.0,1.0); i++)
+    if (LocaleNCompare(image_info->magick,"APNG",MagickPathExtent) == 0)
+      length_of_delay_loop=1;
+    else
+      length_of_delay_loop=(ssize_t) MagickMax((1.0*delay+1.0)/3.0,1.0);
+    for (i=0; i < length_of_delay_loop; i++)
     {
       p->scene=count;
       count++;
@@ -630,12 +651,12 @@ static MagickBooleanType WriteVIDEOImage(const ImageInfo *image_info,
           Image
             *frame;
 
-          (void) FormatLocaleString(p->filename,MagickPathExtent,"%s%.20g.%s",
+          (void) FormatLocaleString(p->filename,MagickPathExtent,"%s%.17g.%s",
             basename,(double) p->scene,intermediate_format);
-          (void) FormatLocaleString(filename,MagickPathExtent,"%s%.20g.%s",
+          (void) FormatLocaleString(filename,MagickPathExtent,"%s%.17g.%s",
             basename,(double) p->scene,intermediate_format);
           (void) FormatLocaleString(previous_image,MagickPathExtent,
-            "%s%.20g.%s",basename,(double) p->scene,intermediate_format);
+            "%s%.17g.%s",basename,(double) p->scene,intermediate_format);
           frame=CloneImage(p,0,0,MagickTrue,exception);
           if (frame == (Image *) NULL)
             break;
@@ -651,7 +672,7 @@ static MagickBooleanType WriteVIDEOImage(const ImageInfo *image_info,
         }
         default:
         {
-          (void) FormatLocaleString(filename,MagickPathExtent,"%s%.20g.%s",
+          (void) FormatLocaleString(filename,MagickPathExtent,"%s%.17g.%s",
             basename,(double) p->scene,intermediate_format);
           if (length > 0)
             status=BlobToFile(filename,blob,length,exception);
@@ -662,11 +683,11 @@ static MagickBooleanType WriteVIDEOImage(const ImageInfo *image_info,
         {
           if (status != MagickFalse)
             (void) LogMagickEvent(CoderEvent,GetMagickModule(),
-              "%.20g. Wrote %s file for scene %.20g:",(double) i,
+              "%.17g. Wrote %s file for scene %.17g:",(double) i,
               intermediate_format,(double) p->scene);
           else
             (void) LogMagickEvent(CoderEvent,GetMagickModule(),
-              "%.20g. Failed to write %s file for scene %.20g:",(double) i,
+              "%.17g. Failed to write %s file for scene %.17g:",(double) i,
               intermediate_format,(double) p->scene);
           (void) LogMagickEvent(CoderEvent,GetMagickModule(),"%s",filename);
         }
@@ -681,6 +702,8 @@ static MagickBooleanType WriteVIDEOImage(const ImageInfo *image_info,
     Convert PAM to VIDEO.
   */
   delegate_info=GetDelegateInfo((char *) NULL,"video:encode",exception);
+  if (delegate_info == (const DelegateInfo *) NULL)
+    delegate_info=GetDelegateInfo((char *) NULL,"mpeg:encode",exception);  /* legacy */
   if (delegate_info != (const DelegateInfo *) NULL)
     {
       char
@@ -704,6 +727,21 @@ static MagickBooleanType WriteVIDEOImage(const ImageInfo *image_info,
             " -pix_fmt \"%s\""," -pix_fmt '%s'",option);
           (void) ConcatenateMagickString(options,command,MagickPathExtent);
         }
+      if (LocaleNCompare(image_info->magick,"APNG",MagickPathExtent) == 0)
+        {
+          double
+            time_per_frame;
+
+          time_per_frame=(double) clone_images->delay /
+            MagickMax((double) clone_images->ticks_per_second,1.0);
+          if (time_per_frame > 0.0)
+            {
+              (void) FormatLocaleString(command,MagickPathExtent,
+                " -filter:v \"setpts=(25*%.17g)*PTS\" -r 1/%.17g",
+                time_per_frame,time_per_frame);
+              (void) ConcatenateMagickString(options,command,MagickPathExtent);
+            }
+        }
       AcquireUniqueFilename(write_info->unique);
       (void) FormatLocaleString(command,MagickPathExtent,
         GetDelegateCommands(delegate_info),basename,intermediate_format,
@@ -716,7 +754,7 @@ static MagickBooleanType WriteVIDEOImage(const ImageInfo *image_info,
         {
           (void) FormatLocaleString(filename,MagickPathExtent,"%s.%s",
             write_info->unique,image_info->magick);
-          status=CopyDelegateFile(filename,image->filename);
+          status=CopyDelegateFile(filename,image->filename,exception);
           (void) RelinquishUniqueFileResource(filename);
         }
       else
@@ -733,9 +771,13 @@ static MagickBooleanType WriteVIDEOImage(const ImageInfo *image_info,
   for (p=clone_images; p != (Image *) NULL; p=GetNextImageInList(p))
   {
     delay=100.0*p->delay/MagickMax(1.0*p->ticks_per_second,1.0);
-    for (i=0; i < (ssize_t) MagickMax((1.0*delay+1.0)/3.0,1.0); i++)
+    if (LocaleNCompare(image_info->magick,"APNG",MagickPathExtent) == 0)
+      length_of_delay_loop=1;
+    else
+      length_of_delay_loop=(ssize_t) MagickMax((1.0*delay+1.0)/3.0,1.0);
+    for (i=0; i < length_of_delay_loop; i++)
     {
-      (void) FormatLocaleString(p->filename,MagickPathExtent,"%s%.20g.%s",
+      (void) FormatLocaleString(p->filename,MagickPathExtent,"%s%.17g.%s",
         basename,(double) count++,intermediate_format);
       (void) RelinquishUniqueFileResource(p->filename);
     }

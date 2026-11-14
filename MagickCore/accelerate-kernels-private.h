@@ -1,11 +1,11 @@
 /*
-  Copyright @ 2010 ImageMagick Studio LLC, a non-profit organization
+  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization
   dedicated to making software imaging solutions freely available.
 
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -336,13 +336,13 @@ OPENCL_ENDIF()
       {
         if (value >= (CLQuantum) MaxMap)
           return ((uint)MaxMap);
-        else 
+        else
           return ((uint)value);
       }
   )
 
   STRINGIFY(
-    static inline float PerceptibleReciprocal(const float x)
+    static inline float MagickSafeReciprocal(const float x)
     {
       float sign = x < (float) 0.0 ? (float) -1.0 : (float) 1.0;
       return((sign*x) >= MagickEpsilon ? (float) 1.0/x : sign*((float) 1.0/MagickEpsilon));
@@ -528,7 +528,10 @@ OPENCL_ENDIF()
             blue=EncodePixelGamma(blue);
           }
           */
-          intensity=0.298839*red+0.586811*green+0.114350*blue;
+          if ((red == green) && (green == blue))
+            intensity=red;
+          else
+            intensity=0.298839*red+0.586811*green+0.114350*blue;
           break;
         }
       case Rec601LuminancePixelIntensityMethod:
@@ -541,7 +544,10 @@ OPENCL_ENDIF()
             blue=DecodePixelGamma(blue);
           }
           */
-          intensity=0.298839*red+0.586811*green+0.114350*blue;
+          if ((red == green) && (green == blue))
+            intensity=red;
+          else
+            intensity=0.298839*red+0.586811*green+0.114350*blue;
           break;
         }
       case Rec709LumaPixelIntensityMethod:
@@ -555,7 +561,10 @@ OPENCL_ENDIF()
             blue=EncodePixelGamma(blue);
           }
           */
-          intensity=0.212656*red+0.715158*green+0.072186*blue;
+          if ((red == green) && (green == blue))
+            intensity=red;
+          else
+            intensity=0.212656*red+0.715158*green+0.072186*blue;
           break;
         }
       case Rec709LuminancePixelIntensityMethod:
@@ -568,7 +577,10 @@ OPENCL_ENDIF()
             blue=DecodePixelGamma(blue);
           }
           */
-          intensity=0.212656*red+0.715158*green+0.072186*blue;
+          if ((red == green) && (green == blue))
+            intensity=red;
+          else
+            intensity=0.212656*red+0.715158*green+0.072186*blue;
           break;
         }
       case RMSPixelIntensityMethod:
@@ -801,7 +813,7 @@ OPENCL_ENDIF()
       }
       case PoissonNoise:
       {
-        float 
+        float
           poisson;
         unsigned int i;
         poisson=exp(-SigmaPoisson*QuantumScale*pixel);
@@ -810,7 +822,7 @@ OPENCL_ENDIF()
           beta=mwcReadPseudoRandomValue(r);
           alpha*=beta;
         }
-        noise=(QuantumRange*i*PerceptibleReciprocal(SigmaPoisson));
+        noise=(QuantumRange*i*MagickSafeReciprocal(SigmaPoisson));
         break;
       }
       case RandomNoise:
@@ -1085,14 +1097,14 @@ OPENCL_ENDIF()
     /*
     */
     __kernel void Histogram(__global CLPixelType * restrict im,
-      const ChannelType channel, 
+      const ChannelType channel,
       const unsigned int colorspace,
       const unsigned int method,
       __global uint4 * restrict histogram)
       {
-        const int x = get_global_id(0);  
-        const int y = get_global_id(1);  
-        const int columns = get_global_size(0);  
+        const int x = get_global_id(0);
+        const int y = get_global_id(1);
+        const int columns = get_global_size(0);
         const int c = x + y * columns;
         if ((channel & SyncChannels) != 0)
         {
@@ -1116,13 +1128,13 @@ OPENCL_ENDIF()
     /*
     */
     __kernel void ContrastStretch(__global CLPixelType * restrict im,
-      const ChannelType channel,  
+      const ChannelType channel,
       __global CLPixelType * restrict stretch_map,
       const float4 white, const float4 black)
       {
-        const int x = get_global_id(0);  
-        const int y = get_global_id(1);  
-        const int columns = get_global_size(0);  
+        const int x = get_global_id(0);
+        const int y = get_global_id(1);
+        const int columns = get_global_size(0);
         const int c = x + y * columns;
 
         uint ePos;
@@ -1136,7 +1148,7 @@ OPENCL_ENDIF()
         {
           if (getRedF4(white) != getRedF4(black))
           {
-            ePos = ScaleQuantumToMap(getRed(oValue)); 
+            ePos = ScaleQuantumToMap(getRed(oValue));
             eValue = stretch_map[ePos];
             red = getRed(eValue);
           }
@@ -1146,7 +1158,7 @@ OPENCL_ENDIF()
         {
           if (getGreenF4(white) != getGreenF4(black))
           {
-            ePos = ScaleQuantumToMap(getGreen(oValue)); 
+            ePos = ScaleQuantumToMap(getGreen(oValue));
             eValue = stretch_map[ePos];
             green = getGreen(eValue);
           }
@@ -1156,7 +1168,7 @@ OPENCL_ENDIF()
         {
           if (getBlueF4(white) != getBlueF4(black))
           {
-            ePos = ScaleQuantumToMap(getBlue(oValue)); 
+            ePos = ScaleQuantumToMap(getBlue(oValue));
             eValue = stretch_map[ePos];
             blue = getBlue(eValue);
           }
@@ -1166,7 +1178,7 @@ OPENCL_ENDIF()
         {
           if (getAlphaF4(white) != getAlphaF4(black))
           {
-            ePos = ScaleQuantumToMap(getAlpha(oValue)); 
+            ePos = ScaleQuantumToMap(getAlpha(oValue));
             eValue = stretch_map[ePos];
             alpha = getAlpha(eValue);
           }
@@ -1351,13 +1363,13 @@ OPENCL_ENDIF()
     /*
     */
     __kernel void Equalize(__global CLPixelType * restrict im,
-      const ChannelType channel,  
+      const ChannelType channel,
       __global CLPixelType * restrict equalize_map,
       const float4 white, const float4 black)
       {
-        const int x = get_global_id(0);  
-        const int y = get_global_id(1);  
-        const int columns = get_global_size(0);  
+        const int x = get_global_id(0);
+        const int y = get_global_id(1);
+        const int columns = get_global_size(0);
         const int c = x + y * columns;
 
         uint ePos;
@@ -1371,19 +1383,19 @@ OPENCL_ENDIF()
         {
           if (getRedF4(white) != getRedF4(black))
           {
-            ePos = ScaleQuantumToMap(getRed(oValue)); 
+            ePos = ScaleQuantumToMap(getRed(oValue));
             eValue = equalize_map[ePos];
             red = getRed(eValue);
-            ePos = ScaleQuantumToMap(getGreen(oValue)); 
+            ePos = ScaleQuantumToMap(getGreen(oValue));
             eValue = equalize_map[ePos];
             green = getRed(eValue);
-            ePos = ScaleQuantumToMap(getBlue(oValue)); 
+            ePos = ScaleQuantumToMap(getBlue(oValue));
             eValue = equalize_map[ePos];
             blue = getRed(eValue);
-            ePos = ScaleQuantumToMap(getAlpha(oValue)); 
+            ePos = ScaleQuantumToMap(getAlpha(oValue));
             eValue = equalize_map[ePos];
             alpha = getRed(eValue);
- 
+
             //write back
             im[c]=(CLPixelType)(blue, green, red, alpha);
           }
@@ -1475,7 +1487,7 @@ OPENCL_ENDIF()
   Improve brightness / contrast of the image
   channel : define which channel is improved
   function : the function called to enhance the brightness contrast
-  number_parameters : numbers of parameters 
+  number_parameters : numbers of parameters
   parameters : the parameter
   */
   __kernel void ComputeFunction(__global CLQuantum *image,const unsigned int number_channels,
@@ -1567,7 +1579,7 @@ OPENCL_ENDIF()
     STRINGIFY(
 
       __kernel void LocalContrastBlurRow(__global CLPixelType *srcImage, __global CLPixelType *dstImage, __global float *tmpImage,
-          const int radius, 
+          const int radius,
           const int imageWidth,
           const int imageHeight)
       {
@@ -1617,7 +1629,7 @@ OPENCL_ENDIF()
 
     STRINGIFY(
       __kernel void LocalContrastBlurApplyColumn(__global CLPixelType *srcImage, __global CLPixelType *dstImage, __global float *blurImage,
-          const int radius, 
+          const int radius,
           const float strength,
           const int imageWidth,
           const int imageHeight)
@@ -1805,7 +1817,7 @@ OPENCL_ENDIF()
     *blue=ClampToQuantum(QuantumRange*b);
   }
 
-  static inline void ModulateHSL(const float percent_hue, const float percent_saturation,const float percent_lightness, 
+  static inline void ModulateHSL(const float percent_hue, const float percent_saturation,const float percent_lightness,
     CLQuantum *red,CLQuantum *green,CLQuantum *blue)
   {
     float
@@ -1827,14 +1839,14 @@ OPENCL_ENDIF()
     ConvertHSLToRGB(hue,saturation,lightness,red,green,blue);
   }
 
-  __kernel void Modulate(__global CLPixelType *im, 
-    const float percent_brightness, 
-    const float percent_hue, 
-    const float percent_saturation, 
+  __kernel void Modulate(__global CLPixelType *im,
+    const float percent_brightness,
+    const float percent_hue,
+    const float percent_saturation,
     const int colorspace)
   {
 
-    const int x = get_global_id(0);  
+    const int x = get_global_id(0);
     const int y = get_global_id(1);
     const int columns = get_global_size(0);
     const int c = x + y * columns;
@@ -1855,14 +1867,14 @@ OPENCL_ENDIF()
       case HSLColorspace:
       default:
         {
-          ModulateHSL(percent_hue, percent_saturation, percent_brightness, 
+          ModulateHSL(percent_hue, percent_saturation, percent_brightness,
               &red, &green, &blue);
         }
 
     }
 
     CLPixelType filteredPixel;
-   
+
     setRed(&filteredPixel, red);
     setGreen(&filteredPixel, green);
     setBlue(&filteredPixel, blue);
@@ -1885,7 +1897,7 @@ OPENCL_ENDIF()
 */
 
   STRINGIFY(
-    __kernel 
+    __kernel
     void MotionBlur(const __global CLPixelType *input, __global CLPixelType *output,
                     const unsigned int imageWidth, const unsigned int imageHeight,
                     const __global float *filter, const unsigned int width, const __global int2* offset,
@@ -1907,7 +1919,7 @@ OPENCL_ENDIF()
       pixel.w = (float)bias.w;
 
       if (((channel & AlphaChannel) == 0) || (matte == 0)) {
-        
+
         for (int i = 0; i < width; i++) {
           // only support EdgeVirtualPixelMethod through ClampToCanvas
           // TODO: implement other virtual pixel method
@@ -1951,7 +1963,7 @@ OPENCL_ENDIF()
 
           gamma+=k*alpha;
         }
-        gamma = PerceptibleReciprocal(gamma);
+        gamma = MagickSafeReciprocal(gamma);
         pixel.xyz = gamma*pixel.xyz;
 
         CLPixelType outputPixel;
@@ -1983,7 +1995,7 @@ OPENCL_ENDIF()
     return 1.0f;
   }
   )
-    
+
   STRINGIFY(
   // Based on CubicBC from resize.c
   float CubicBC(const float x,const __global float* resizeFilterCoefficients)
@@ -2096,7 +2108,7 @@ OPENCL_ENDIF()
   {
     switch (filterType)
     {
-    /* Call Sinc even for SincFast to get better precision on GPU 
+    /* Call Sinc even for SincFast to get better precision on GPU
        and to avoid thread divergence.  Sinc is pretty fast on GPU anyway...*/
     case SincWeightingFunction:
     case SincFastWeightingFunction:
@@ -2161,7 +2173,7 @@ OPENCL_ENDIF()
     pixelIndex = (pixelIndex<pixelPerWorkgroup)?pixelIndex:-1;
     return pixelIndex;
   }
- 
+
   )
 
   STRINGIFY(
@@ -2183,7 +2195,7 @@ OPENCL_ENDIF()
     // calculate the range of input image pixels to cache
     float scale = MagickMax(1.0f/xFactor+MagickEpsilon ,1.0f);
     const float support = MagickMax(scale*resizeFilterSupport,0.5f);
-    scale = PerceptibleReciprocal(scale);
+    scale = MagickSafeReciprocal(scale);
 
     const int cacheRangeStartX = MagickMax((int)((startX+0.5f)/xFactor+MagickEpsilon-support+0.5f),(int)(0));
     const int cacheRangeEndX = MagickMin((int)(cacheRangeStartX + numCachedPixels), (int)inputColumns);
@@ -2305,7 +2317,7 @@ OPENCL_ENDIF()
         float density = densityCache[itemID];
         if ((density != 0.0f) && (density != 1.0f))
         {
-          density = PerceptibleReciprocal(density);
+          density = MagickSafeReciprocal(density);
           filteredPixel *= (float4) density;
           if (alpha_index != 0)
             gamma *= density;
@@ -2313,7 +2325,7 @@ OPENCL_ENDIF()
 
         if (alpha_index != 0)
         {
-          gamma = PerceptibleReciprocal(gamma);
+          gamma = MagickSafeReciprocal(gamma);
           filteredPixel.x *= gamma;
           filteredPixel.y *= gamma;
           filteredPixel.z *= gamma;
@@ -2345,7 +2357,7 @@ OPENCL_ENDIF()
     // calculate the range of input image pixels to cache
     float scale = MagickMax(1.0f/yFactor+MagickEpsilon ,1.0f);
     const float support = MagickMax(scale*resizeFilterSupport,0.5f);
-    scale = PerceptibleReciprocal(scale);
+    scale = MagickSafeReciprocal(scale);
 
     const int cacheRangeStartY = MagickMax((int)((startY+0.5f)/yFactor+MagickEpsilon-support+0.5f),(int)(0));
     const int cacheRangeEndY = MagickMin((int)(cacheRangeStartY + numCachedPixels), (int)inputRows);
@@ -2471,7 +2483,7 @@ OPENCL_ENDIF()
         float density = densityCache[itemID];
         if ((density != 0.0f) && (density != 1.0f))
         {
-          density = PerceptibleReciprocal(density);
+          density = MagickSafeReciprocal(density);
           filteredPixel *= (float4) density;
           if (alpha_index != 0)
             gamma *= density;
@@ -2479,7 +2491,7 @@ OPENCL_ENDIF()
 
         if (alpha_index != 0)
         {
-          gamma = PerceptibleReciprocal(gamma);
+          gamma = MagickSafeReciprocal(gamma);
           filteredPixel.x *= gamma;
           filteredPixel.y *= gamma;
           filteredPixel.z *= gamma;
@@ -2558,11 +2570,11 @@ OPENCL_ENDIF()
       normalize += 1.0f;
     }
 
-    normalize = PerceptibleReciprocal(normalize);
+    normalize = MagickSafeReciprocal(normalize);
 
     if ((number_channels == 4) || (number_channels == 2))
     {
-      gamma = PerceptibleReciprocal(gamma);
+      gamma = MagickSafeReciprocal(gamma);
       result.x *= gamma;
       result.y *= gamma;
       result.z *= gamma;

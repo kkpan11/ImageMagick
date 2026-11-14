@@ -17,13 +17,13 @@
 %                                March 2001                                   %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2001 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -1025,17 +1025,17 @@ static Image *ReadDPXImage(const ImageInfo *image_info,ExceptionInfo *exception)
       dpx.television.interlace=(unsigned char) ReadBlobByte(image);
       offset++;
       if (dpx.television.interlace != 0)
-        (void) FormatImageProperty(image,"dpx:television.interlace","%.20g",
+        (void) FormatImageProperty(image,"dpx:television.interlace","%.17g",
           (double) dpx.television.interlace);
       dpx.television.field_number=(unsigned char) ReadBlobByte(image);
       offset++;
       if (dpx.television.field_number != 0)
-        (void) FormatImageProperty(image,"dpx:television.field_number","%.20g",
+        (void) FormatImageProperty(image,"dpx:television.field_number","%.17g",
           (double) dpx.television.field_number);
       dpx.television.video_signal=(unsigned char) ReadBlobByte(image);
       offset++;
       if (dpx.television.video_signal != 0)
-        (void) FormatImageProperty(image,"dpx:television.video_signal","%.20g",
+        (void) FormatImageProperty(image,"dpx:television.video_signal","%.17g",
           (double) dpx.television.video_signal);
       dpx.television.padding=(unsigned char) ReadBlobByte(image);
       offset++;
@@ -1119,7 +1119,7 @@ static Image *ReadDPXImage(const ImageInfo *image_info,ExceptionInfo *exception)
               "InsufficientImageDataInFile");
           profile=AcquireProfileStringInfo("dpx:user-data",length,exception);
           if (profile == (StringInfo *) NULL)
-            offset=SeekBlob(image,length,SEEK_CUR);
+            offset=SeekBlob(image,(MagickOffsetType) length,SEEK_CUR);
           else
             {
               offset+=ReadBlob(image,length,GetStringInfoDatum(profile));
@@ -1563,7 +1563,7 @@ static MagickBooleanType WriteDPXImage(const ImageInfo *image_info,Image *image,
   if (profile != (StringInfo *) NULL)
     {
       if (GetStringInfoLength(profile) > 1048576)
-        ThrowWriterException(ImageError,"WidthOrHeightExceedsLimit");
+        ThrowWriterException(ResourceLimitError,"ProfileSizeExceedsLimit");
       dpx.file.image_offset+=(unsigned int) GetStringInfoLength(profile);
       dpx.file.image_offset=(((dpx.file.image_offset+0x2000-1)/0x2000)*0x2000);
     }
@@ -1744,12 +1744,12 @@ static MagickBooleanType WriteDPXImage(const ImageInfo *image_info,Image *image,
   dpx.orientation.x_center=0.0f;
   value=GetDPXProperty(image,"dpx:orientation.x_center",exception);
   if (value != (const char *) NULL)
-    dpx.orientation.x_center=StringToDouble(value,(char **) NULL);
+    dpx.orientation.x_center=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.orientation.x_center);
   dpx.orientation.y_center=0.0f;
   value=GetDPXProperty(image,"dpx:orientation.y_center",exception);
   if (value != (const char *) NULL)
-    dpx.orientation.y_center=StringToDouble(value,(char **) NULL);
+    dpx.orientation.y_center=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.orientation.y_center);
   dpx.orientation.x_size=0U;
   value=GetDPXProperty(image,"dpx:orientation.x_size",exception);
@@ -1867,12 +1867,12 @@ static MagickBooleanType WriteDPXImage(const ImageInfo *image_info,Image *image,
   dpx.film.frame_rate=0.0f;
   value=GetDPXProperty(image,"dpx:film.frame_rate",exception);
   if (value != (const char *) NULL)
-    dpx.film.frame_rate=StringToDouble(value,(char **) NULL);
+    dpx.film.frame_rate=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.film.frame_rate);
   dpx.film.shutter_angle=0.0f;
   value=GetDPXProperty(image,"dpx:film.shutter_angle",exception);
   if (value != (const char *) NULL)
-    dpx.film.shutter_angle=StringToDouble(value,(char **) NULL);
+    dpx.film.shutter_angle=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.film.shutter_angle);
   (void) memset(dpx.film.frame_id,0,sizeof(dpx.film.frame_id));
   value=GetDPXProperty(image,"dpx:film.frame_id",exception);
@@ -1920,52 +1920,52 @@ static MagickBooleanType WriteDPXImage(const ImageInfo *image_info,Image *image,
   value=GetDPXProperty(image,"dpx:television.horizontal_sample_rate",
     exception);
   if (value != (const char *) NULL)
-    dpx.television.horizontal_sample_rate=StringToDouble(value,(char **) NULL);
+    dpx.television.horizontal_sample_rate=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.television.horizontal_sample_rate);
   dpx.television.vertical_sample_rate=0.0f;
   value=GetDPXProperty(image,"dpx:television.vertical_sample_rate",exception);
   if (value != (const char *) NULL)
-    dpx.television.vertical_sample_rate=StringToDouble(value,(char **) NULL);
+    dpx.television.vertical_sample_rate=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.television.vertical_sample_rate);
   dpx.television.frame_rate=0.0f;
   value=GetDPXProperty(image,"dpx:television.frame_rate",exception);
   if (value != (const char *) NULL)
-    dpx.television.frame_rate=StringToDouble(value,(char **) NULL);
+    dpx.television.frame_rate=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.television.frame_rate);
   dpx.television.time_offset=0.0f;
   value=GetDPXProperty(image,"dpx:television.time_offset",exception);
   if (value != (const char *) NULL)
-    dpx.television.time_offset=StringToDouble(value,(char **) NULL);
+    dpx.television.time_offset=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.television.time_offset);
   dpx.television.gamma=0.0f;
   value=GetDPXProperty(image,"dpx:television.gamma",exception);
   if (value != (const char *) NULL)
-    dpx.television.gamma=StringToDouble(value,(char **) NULL);
+    dpx.television.gamma=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.television.gamma);
   dpx.television.black_level=0.0f;
   value=GetDPXProperty(image,"dpx:television.black_level",exception);
   if (value != (const char *) NULL)
-    dpx.television.black_level=StringToDouble(value,(char **) NULL);
+    dpx.television.black_level=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.television.black_level);
   dpx.television.black_gain=0.0f;
   value=GetDPXProperty(image,"dpx:television.black_gain",exception);
   if (value != (const char *) NULL)
-    dpx.television.black_gain=StringToDouble(value,(char **) NULL);
+    dpx.television.black_gain=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.television.black_gain);
   dpx.television.break_point=0.0f;
   value=GetDPXProperty(image,"dpx:television.break_point",exception);
   if (value != (const char *) NULL)
-    dpx.television.break_point=StringToDouble(value,(char **) NULL);
+    dpx.television.break_point=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.television.break_point);
   dpx.television.white_level=0.0f;
   value=GetDPXProperty(image,"dpx:television.white_level",exception);
   if (value != (const char *) NULL)
-    dpx.television.white_level=StringToDouble(value,(char **) NULL);
+    dpx.television.white_level=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.television.white_level);
   dpx.television.integration_times=0.0f;
   value=GetDPXProperty(image,"dpx:television.integration_times",exception);
   if (value != (const char *) NULL)
-    dpx.television.integration_times=StringToDouble(value,(char **) NULL);
+    dpx.television.integration_times=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,dpx.television.integration_times);
   offset+=WriteBlob(image,sizeof(dpx.television.reserve),(unsigned char *)
     dpx.television.reserve);
@@ -1976,20 +1976,23 @@ static MagickBooleanType WriteDPXImage(const ImageInfo *image_info,Image *image,
   if (value != (const char *) NULL)
     (void) CopyMagickString(dpx.user.id,value,sizeof(dpx.user.id));
   offset+=WriteBlob(image,sizeof(dpx.user.id),(unsigned char *) dpx.user.id);
+  if (offset != (MagickOffsetType) (dpx.file.generic_size+
+      dpx.file.industry_size+sizeof(dpx.user.id)))
+    ThrowWriterException(BlobError,"UnableToWriteBlob");
   if (profile != (StringInfo *) NULL)
-    offset+=WriteBlob(image,GetStringInfoLength(profile),
-      GetStringInfoDatum(profile));
-  while (offset < (MagickOffsetType) dpx.image.image_element[0].data_offset)
-  {
-    count=WriteBlobByte(image,0x00);
-    if (count != 1)
-      {
-        ThrowFileException(exception,FileOpenError,"UnableToWriteFile",
-          image->filename);
-        break;
-      }
-    offset+=count;
-  }
+    {
+      extent=GetStringInfoLength(profile);
+      count=WriteBlob(image,extent,GetStringInfoDatum(profile));
+      if (count != (ssize_t) extent)
+        ThrowWriterException(BlobError,"UnableToWriteBlob");
+      offset+=count;
+    }
+  extent=(size_t) ((MagickOffsetType)
+    dpx.image.image_element[0].data_offset-offset);
+  count=WriteBlobPadding(image,extent,'\0');
+  if (count != (ssize_t) extent)
+    ThrowWriterException(BlobError,"UnableToWriteBlob");
+  offset+=count;
   /*
     Convert pixel packets to DPX raster image.
   */
@@ -2048,7 +2051,7 @@ static MagickBooleanType WriteDPXImage(const ImageInfo *image_info,Image *image,
       break;
     }
   }
-  extent=GetBytesPerRow(image->columns,samples_per_pixel,image->depth,
+  extent=GetBytesPerRow(image->columns,samples_per_pixel,quantum_info->depth,
     dpx.image.image_element[0].packing == 0 ? MagickFalse : MagickTrue);
   pixels=(unsigned char *) GetQuantumPixels(quantum_info);
   for (y=0; y < (ssize_t) image->rows; y++)
@@ -2065,15 +2068,16 @@ static MagickBooleanType WriteDPXImage(const ImageInfo *image_info,Image *image,
       break;
     count=WriteBlob(image,extent,pixels);
     if (count != (ssize_t) extent)
-      break;
+      {
+        status=MagickFalse;
+        break;
+      }
     status=SetImageProgress(image,SaveImageTag,(MagickOffsetType) y,
       image->rows);
     if (status == MagickFalse)
       break;
   }
   quantum_info=DestroyQuantumInfo(quantum_info);
-  if (y < (ssize_t) image->rows)
-    ThrowWriterException(CorruptImageError,"UnableToWriteImageData");
   if (CloseBlob(image) == MagickFalse)
     status=MagickFalse;
   return(status);

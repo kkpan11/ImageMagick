@@ -17,13 +17,13 @@
 %                                 July 2016                                   %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2016 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -60,6 +60,7 @@
 #include "MagickCore/quantum-private.h"
 #include "MagickCore/static.h"
 #include "MagickCore/string_.h"
+#include "MagickCore/string-private.h"
 #include "MagickCore/module.h"
 
 /*
@@ -180,22 +181,25 @@ static Image *ReadPGXImage(const ImageInfo *image_info,ExceptionInfo *exception)
     }
   if (ReadBlobString(image,buffer) == (char *) NULL)
     ThrowReaderException(CorruptImageError,"ImproperImageHeader");
-  count=(ssize_t) sscanf(buffer,"PG%[ \t]%2s%[ \t+-]%d%[ \t]%d%[ \t]%d",sans,
-    endian,sign,&precision,sans,&width,sans,&height);
+  count=(ssize_t) MagickSscanf(buffer,"PG%[ \t]%2s%[ \t+-]%d%[ \t]%d%[ \t]%d",
+    sans,endian,sign,&precision,sans,&width,sans,&height);
   if (count != 8)
+    ThrowReaderException(CorruptImageError,"ImproperImageHeader");
+  if ((width <= 0) || (height <= 0) || (precision <= 0) || (precision > 64))
     ThrowReaderException(CorruptImageError,"ImproperImageHeader");
   image->depth=(size_t) precision;
   if (LocaleCompare(endian,"ML") == 0)
     image->endian=MSBEndian;
   image->columns=(size_t) width;
   image->rows=(size_t) height;
-  if ((image->columns == 0) || (image->rows == 0))
-    ThrowReaderException(CorruptImageError,"ImproperImageHeader");
   if (image_info->ping != MagickFalse)
     {
       (void) CloseBlob(image);
       return(GetFirstImageInList(image));
     }
+  if ((image->columns > GetBlobSize(image)) ||
+      (image->rows > GetBlobSize(image)))
+    ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
   status=SetImageExtent(image,image->columns,image->rows,exception);
   if (status == MagickFalse)
     return(DestroyImageList(image));
@@ -232,8 +236,11 @@ static Image *ReadPGXImage(const ImageInfo *image_info,ExceptionInfo *exception)
   SetQuantumImageType(image,GrayQuantum);
   quantum_info=DestroyQuantumInfo(quantum_info);
   if (EOFBlob(image) != MagickFalse)
-    ThrowFileException(exception,CorruptImageError,"UnexpectedEndOfFile",
-      image->filename);
+    {
+      ThrowFileException(exception,CorruptImageError,"UnexpectedEndOfFile",
+        image->filename);
+      status=MagickFalse;
+    }
   if (CloseBlob(image) == MagickFalse)
     status=MagickFalse;
   if (status == MagickFalse)
@@ -387,16 +394,22 @@ static MagickBooleanType WritePGXImage(const ImageInfo *image_info,Image *image,
       GrayQuantum,pixels,exception);
     count=WriteBlob(image,length,pixels);
     if (count != (ssize_t) length)
-      break;
+      {
+        status=MagickFalse;
+        break;
+      }
     count=WriteBlob(image,(size_t) (-(ssize_t) length) & 0x01,pixels);
+    if (count != (ssize_t) (-(ssize_t) length & 0x01))
+      {
+        status=MagickFalse;
+        break;
+      }
     status=SetImageProgress(image,SaveImageTag,(MagickOffsetType) y,
       image->rows);
     if (status == MagickFalse)
       break;
   }
   quantum_info=DestroyQuantumInfo(quantum_info);
-  if (y < (ssize_t) image->rows)
-    ThrowWriterException(CorruptImageError,"UnableToWriteImageData");
   if (CloseBlob(image) == MagickFalse)
     status=MagickFalse;
   return(status);

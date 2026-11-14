@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -172,7 +172,8 @@ static Image *ReadVICARImage(const ImageInfo *image_info,
     *q;
 
   size_t
-    length;
+    length,
+    number_pixels;
 
   ssize_t
     count,
@@ -236,7 +237,7 @@ static Image *ReadVICARImage(const ImageInfo *image_info,
         do
         {
           if ((size_t) (p-keyword) < (MagickPathExtent-1))
-            *p++=c;
+            *p++=(char) c;
           c=ReadBlobByte(image);
           if (c == EOF)
             break;
@@ -265,7 +266,7 @@ static Image *ReadVICARImage(const ImageInfo *image_info,
             while (c != '\'')
             {
               if ((size_t) (p-value) < (MagickPathExtent-1))
-                *p++=c;
+                *p++=(char) c;
               c=ReadBlobByte(image);
               if (c == EOF)
                 break;
@@ -280,7 +281,7 @@ static Image *ReadVICARImage(const ImageInfo *image_info,
             while (c != '"')
             {
               if ((size_t) (p-value) < (MagickPathExtent-1))
-                *p++=c;
+                *p++=(char) c;
               c=ReadBlobByte(image);
               if (c == EOF)
                 break;
@@ -295,7 +296,7 @@ static Image *ReadVICARImage(const ImageInfo *image_info,
             while (c != ')')
             {
               if ((size_t) (p-value) < (MagickPathExtent-1))
-                *p++=c;
+                *p++=(char) c;
               c=ReadBlobByte(image);
               if (c == EOF)
                 break;
@@ -308,7 +309,7 @@ static Image *ReadVICARImage(const ImageInfo *image_info,
             while (isalnum((int) ((unsigned char) c)))
             {
               if ((size_t) (p-value) < (MagickPathExtent-1))
-                *p++=c;
+                *p++=(char) c;
               c=ReadBlobByte(image);
               if (c == EOF)
                 break;
@@ -375,6 +376,10 @@ static Image *ReadVICARImage(const ImageInfo *image_info,
       (void) CloseBlob(image);
       return(GetFirstImageInList(image));
     }
+  if (HeapOverflowSanityCheckGetSize(image->columns,image->rows,&number_pixels) != MagickFalse)
+    ThrowReaderException(ResourceLimitError,"MemoryAllocationFailed");
+  if (number_pixels > (size_t) GetBlobSize(image))
+    ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
   status=SetImageExtent(image,image->columns,image->rows,exception);
   if (status == MagickFalse)
     return(DestroyImageList(image));
@@ -570,8 +575,8 @@ static MagickBooleanType WriteVICARImage(const ImageInfo *image_info,
   */
   (void) memset(header,' ',MagickPathExtent);
   (void) FormatLocaleString(header,MagickPathExtent,
-    "LBLSIZE=%.20g FORMAT='BYTE' TYPE='IMAGE' BUFSIZE=20000 DIM=2 EOL=0 "
-    "RECSIZE=%.20g ORG='BSQ' NL=%.20g NS=%.20g NB=1 N1=0 N2=0 N3=0 N4=0 NBB=0 "
+    "LBLSIZE=%.17g FORMAT='BYTE' TYPE='IMAGE' BUFSIZE=20000 DIM=2 EOL=0 "
+    "RECSIZE=%.17g ORG='BSQ' NL=%.17g NS=%.17g NB=1 N1=0 N2=0 N3=0 N4=0 NBB=0 "
     "NLB=0 TASK='ImageMagick'",(double) MagickPathExtent,(double)
     image->columns,(double) image->rows,(double) image->columns);
   (void) WriteBlob(image,MagickPathExtent,(unsigned char *) header);

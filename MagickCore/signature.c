@@ -22,7 +22,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -120,9 +120,6 @@ MagickPrivate SignatureInfo *AcquireSignatureInfo(void)
   SignatureInfo
     *signature_info;
 
-  unsigned long
-    lsb_first;
-
   signature_info=(SignatureInfo *) AcquireCriticalMemory(
     sizeof(*signature_info));
   (void) memset(signature_info,0,sizeof(*signature_info));
@@ -136,8 +133,7 @@ MagickPrivate SignatureInfo *AcquireSignatureInfo(void)
     ThrowFatalException(ResourceLimitFatalError,"MemoryAllocationFailed");
   (void) memset(signature_info->accumulator,0,SignatureBlocksize*
     sizeof(*signature_info->accumulator));
-  lsb_first=1;
-  signature_info->lsb_first=(int) (*(char *) &lsb_first) == 1 ? MagickTrue :
+  signature_info->lsb_first=GetHostEndian() == LSBEndian ? MagickTrue :
     MagickFalse;
   signature_info->timestamp=GetMagickTime();
   signature_info->signature=MagickCoreSignature;
@@ -533,7 +529,7 @@ MagickExport MagickBooleanType SignatureImage(Image *image,
 
       if (GetPixelReadMask(image,p) <= (QuantumRange/2))
         {
-          p+=GetPixelChannels(image);
+          p+=(ptrdiff_t) GetPixelChannels(image);
           continue;
         }
       for (i=0; i < (ssize_t) GetPixelChannels(image); i++)
@@ -553,7 +549,7 @@ MagickExport MagickBooleanType SignatureImage(Image *image,
           for (j=0; j < (ssize_t) sizeof(pixel); j++)
             *q++=(unsigned char) ((unsigned char *) &pixel)[j];
       }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     SetStringInfoLength(signature,(size_t) (q-pixels));
     UpdateSignature(signature_info,signature);
@@ -657,14 +653,14 @@ RestoreMSCWarning
         for (i=0; i < 16; i++)
         {
           T=(*((unsigned int *) p));
-          p+=4;
+          p+=(ptrdiff_t) 4;
           W[i]=Trunc32(T);
         }
       else
         for (i=0; i < 16; i+=2)
         {
           T=(*((unsigned int *) p));
-          p+=8;
+          p+=(ptrdiff_t) 8;
           W[i]=Trunc32(T >> shift);
           W[i+1]=Trunc32(T);
         }
@@ -676,7 +672,7 @@ RestoreMSCWarning
       for (i=0; i < 16; i++)
       {
         T=(*((unsigned int *) p));
-        p+=4;
+        p+=(ptrdiff_t) 4;
         W[i]=((T << 24) & 0xff000000) | ((T << 8) & 0x00ff0000) |
           ((T >> 8) & 0x0000ff00) | ((T >> 24) & 0x000000ff);
       }
@@ -684,7 +680,7 @@ RestoreMSCWarning
       for (i=0; i < 16; i+=2)
       {
         T=(*((unsigned int *) p));
-        p+=8;
+        p+=(ptrdiff_t) 8;
         W[i]=((T << 24) & 0xff000000) | ((T << 8) & 0x00ff0000) |
           ((T >> 8) & 0x0000ff00) | ((T >> 24) & 0x000000ff);
         T>>=shift;
@@ -804,7 +800,7 @@ MagickPrivate void UpdateSignature(SignatureInfo *signature_info,
       (void) memcpy(GetStringInfoDatum(signature_info->message)+
         signature_info->extent,p,i);
       n-=i;
-      p+=i;
+      p+=(ptrdiff_t) i;
       signature_info->extent+=i;
       if (signature_info->extent != GetStringInfoLength(signature_info->message))
         return;
@@ -813,7 +809,7 @@ MagickPrivate void UpdateSignature(SignatureInfo *signature_info,
   while (n >= GetStringInfoLength(signature_info->message))
   {
     SetStringInfoDatum(signature_info->message,p);
-    p+=GetStringInfoLength(signature_info->message);
+    p+=(ptrdiff_t) GetStringInfoLength(signature_info->message);
     n-=GetStringInfoLength(signature_info->message);
     TransformSignature(signature_info);
   }

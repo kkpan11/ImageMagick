@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -99,6 +99,21 @@
 %    o clone_image: the source image for artifacts to clone.
 %
 */
+
+typedef char
+  *(*CloneKeyFunc)(const char *),
+  *(*CloneValueFunc)(const char *);
+
+static inline void *CloneArtifactKey(void *key)
+{
+  return((void *) ((CloneKeyFunc) ConstantString)((const char *) key));
+}
+
+static inline void *CloneArtifactValue(void *value)
+{
+  return((void *) ((CloneValueFunc) ConstantString)((const char *) value));
+}
+
 MagickExport MagickBooleanType CloneImageArtifacts(Image *image,
   const Image *clone_image)
 {
@@ -117,7 +132,7 @@ MagickExport MagickBooleanType CloneImageArtifacts(Image *image,
       if (image->artifacts != (void *) NULL)
         DestroyImageArtifacts(image);
       image->artifacts=CloneSplayTree((SplayTreeInfo *) clone_image->artifacts,
-        (void *(*)(void *)) ConstantString,(void *(*)(void *)) ConstantString);
+        CloneArtifactKey,CloneArtifactValue);
     }
   return(MagickTrue);
 }

@@ -15,13 +15,13 @@
 %                               January 2012                                  %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2012 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -175,6 +175,9 @@
 #  include "MagickWand/studio.h"
 #  include "MagickWand/MagickWand.h"
 #  include "MagickWand/script-token.h"
+#  include "MagickCore/exception-private.h"
+#  include "MagickCore/policy.h"
+#  include "MagickCore/policy-private.h"
 #  include "MagickCore/string-private.h"
 #  include "MagickCore/utility-private.h"
 #endif
@@ -207,9 +210,11 @@ WandExport ScriptTokenInfo *AcquireScriptTokenInfo(const char *filename)
   ScriptTokenInfo
     *token_info;
 
+  if (IsPathAuthorized(ReadPolicyRights,filename) == MagickFalse)
+    return((ScriptTokenInfo *) NULL);
   token_info=(ScriptTokenInfo *) AcquireMagickMemory(sizeof(*token_info));
   if (token_info == (ScriptTokenInfo *) NULL)
-    return token_info;
+    return(token_info);
   (void) memset(token_info,0,sizeof(*token_info));
 
   token_info->opened=MagickFalse;
@@ -217,17 +222,27 @@ WandExport ScriptTokenInfo *AcquireScriptTokenInfo(const char *filename)
     token_info->stream=stdin;
     token_info->opened=MagickFalse;
   }
-  else if ( LocaleNCompare(filename,"fd:",3) == 0 ) {
-    token_info->stream=fdopen(StringToLong(filename+3),"r");
+  else if (LocaleNCompare(filename,"fd:",3) == 0 ) {
+    token_info->stream=fdopen(StringToLong(filename+3),"rb");
     token_info->opened=MagickFalse;
   }
   else {
-    token_info->stream=fopen_utf8(filename, "r");
+    int fd = open_utf8(filename,O_RDONLY | O_CLOEXEC | O_NOFOLLOW,0);
+    if (fd != -1)
+      token_info->stream=fdopen(fd,"r");
+    if (token_info->stream != (FILE *) NULL)
+      token_info->opened=MagickTrue;
+    else
+      fd=close_utf8(fd)-1;
   }
-  if ( token_info->stream == (FILE *) NULL ) {
-    token_info=(ScriptTokenInfo *) RelinquishMagickMemory(token_info);
-    return(token_info);
-  }
+  if ((token_info->stream != (FILE *) NULL) &&
+      (IsPathAuthorized(ReadPolicyRights,filename) != MagickFalse))
+    token_info->opened=MagickTrue;
+  else
+    {
+      token_info=(ScriptTokenInfo *) RelinquishMagickMemory(token_info);
+      return(token_info);
+    }
 
   token_info->curr_line=1;
   token_info->length=INITAL_TOKEN_LENGTH;
@@ -269,7 +284,7 @@ WandExport ScriptTokenInfo * DestroyScriptTokenInfo(ScriptTokenInfo *token_info)
   assert(token_info->signature == MagickWandSignature);
 
   if ( token_info->opened != MagickFalse )
-    fclose(token_info->stream);
+    (void) fclose(token_info->stream);
 
   if (token_info->token != (char *) NULL )
     token_info->token=(char *) RelinquishMagickMemory(token_info->token);

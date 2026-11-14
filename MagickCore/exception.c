@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -140,7 +140,7 @@ MagickExport ExceptionInfo *AcquireExceptionInfo(void)
 %
 %  The format of the ClearMagickException method is:
 %
-%      ClearMagickException(ExceptionInfo *exception)
+%      void ClearMagickException(ExceptionInfo *exception)
 %
 %  A description of each parameter follows:
 %
@@ -194,7 +194,7 @@ MagickExport void ClearMagickException(ExceptionInfo *exception)
 %
 %  The format of the CatchException method is:
 %
-%      CatchException(ExceptionInfo *exception)
+%      void CatchException(ExceptionInfo *exception)
 %
 %  A description of each parameter follows:
 %
@@ -533,6 +533,8 @@ MagickExport char *GetExceptionMessage(const int error)
   (void) CopyMagickString(exception,strerror_r(error,exception,
     sizeof(exception)),sizeof(exception));
 #endif
+#elif defined(MAGICKCORE_WINDOWS_SUPPORT)
+  strerror_s(exception,sizeof(exception),error);
 #else
   (void) CopyMagickString(exception,strerror(error),sizeof(exception));
 #endif
@@ -673,7 +675,7 @@ MagickExport const char *GetLocaleExceptionMessage(const ExceptionType severity,
 %
 %  The format of the InheritException method is:
 %
-%      InheritException(ExceptionInfo *exception,const ExceptionInfo *relative)
+%      void InheritException(ExceptionInfo *exception,const ExceptionInfo *relative)
 %
 %  A description of each parameter follows:
 %
@@ -723,7 +725,7 @@ MagickExport void InheritException(ExceptionInfo *exception,
 %
 %  The format of the InitializeExceptionInfo method is:
 %
-%      InitializeExceptionInfo(ExceptionInfo *exception)
+%      void InitializeExceptionInfo(ExceptionInfo *exception)
 %
 %  A description of each parameter follows:
 %
@@ -1120,11 +1122,7 @@ MagickExport MagickBooleanType ThrowMagickExceptionList(
   (void) CopyMagickString(reason,locale,MagickPathExtent);
   (void) ConcatenateMagickString(reason," ",MagickPathExtent);
   length=strlen(reason);
-#if defined(MAGICKCORE_HAVE_VSNPRINTF)
   n=vsnprintf(reason+length,MagickPathExtent-length,format,operands);
-#else
-  n=vsprintf(reason+length,format,operands);
-#endif
   if (n < 0)
     reason[MagickPathExtent-1]='\0';
   status=LogMagickEvent(ExceptionEvent,module,function,line,"%s",reason);
@@ -1136,7 +1134,7 @@ MagickExport MagickBooleanType ThrowMagickExceptionList(
     type="error";
   if (severity >= FatalErrorException)
     type="fatal";
-  (void) FormatLocaleString(message,MagickPathExtent,"%s @ %s/%s/%s/%.20g",
+  (void) FormatLocaleString(message,MagickPathExtent,"%s @ %s/%s/%s/%.17g",
     reason,type,path,function,(double) line);
   (void) ThrowException(exception,severity,message,(char *) NULL);
   return(status);

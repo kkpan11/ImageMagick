@@ -3,303 +3,1021 @@ on:
   schedule:
   - cron: 0 6 * * *
   push:
-    tags:
-    - '*'
+    branches:
+    - main
+    paths:
+    - configure
+    - m4/version.m4
+    - .github/build/windows/download-configure.sh
+    - .github/build/shared/create-portable.sh
+    - .github/build/shared/create-sbom.py
+    - .github/build/shared/download-dependencies.sh
+    - .github/workflows/release.yml
   pull_request:
     branches:
     - main
     paths:
-    - '.github/workflows/release.yml'
+    - .github/build/shared/create-portable.sh
+    - .github/build/shared/create-sbom.py
+    - .github/workflows/release.yml
 
-name: release
+permissions:
+  contents: read
+
+name: Release
 jobs:
-  create_app_image:
-    name: Create AppImage
-    runs-on: ubuntu-latest
-    container:
-      image: ubuntu:20.04
-
-    strategy:
-      matrix:
-        compiler: [ gcc, clang ]
-        include:
-          - compiler: gcc
-            cxx_compiler: g++
-            packages: gcc g++
-          - compiler: clang
-            cxx_compiler: clang++
-            packages: clang
+  version:
+    name: Set version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{steps.version.outputs.version}}
+      semantic_version: ${{steps.version.outputs.semantic_version}}
+      timestamp: ${{steps.version.outputs.timestamp}}
+      publish: ${{steps.version.outputs.publish}}
 
     steps:
-    - name: Install dependencies
-      run: |
-        set -e
-        export DEBIAN_FRONTEND=noninteractive
-        apt update -y
-        apt install -y autoconf curl fuse git kmod libbz2-dev libdjvulibre-dev libfontconfig-dev libfreetype6-dev libfribidi-dev libharfbuzz-dev liblcms-dev libopenexr-dev libopenjp2-7-dev libturbojpeg0-dev liblqr-dev libraqm-dev libtiff-dev libwebp-dev libx11-dev libxml2-dev liblzma-dev make software-properties-common wget ${{ matrix.packages }}
-        add-apt-repository ppa:git-core/ppa -y
-        apt install -y git
-        add-apt-repository ppa:strukturag/libheif -y
-        add-apt-repository ppa:strukturag/libde265 -y
-        apt install libheif-dev -y
+      - name: Clone ImageMagick
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Set version
+        id: version
+        run: |
+          version=$(grep -oP "PACKAGE_VERSION='\K[0-9\.-]*" configure)
+          semantic_version="${version/-/.}"
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version"
+          echo "semantic_version=$semantic_version" >> $GITHUB_OUTPUT
+          echo "semantic_version=$semantic_version"
+          timestamp=$(TZ=UTC git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd)
+          echo "timestamp=$timestamp" >> $GITHUB_OUTPUT
+          echo "timestamp=$timestamp"
+          tag=$(git describe --tags HEAD --exact-match || true)
+          if [[ "$tag" == "$version" ]]; then
+            echo "publish=true" >> $GITHUB_OUTPUT
+            echo "publish=true"
+          fi
 
-      # Avoid fatal: detected dubious ownership in repository at '/__w/ImageMagick/ImageMagick'
-      # Possible workaround: https://github.com/actions/runner/issues/2033#issuecomment-1598547465
-    - name: Flag current workspace as safe for git
-      run: git config --global --add safe.directory ${GITHUB_WORKSPACE}
+  changelog:
+    name: Create ChangeLog.md
+    runs-on: ubuntu-24.04
+    needs:
+      - version
 
-    - name: Download AppImage
-      run: |
-        mkdir /app-image
-        cd /app-image
-        wget -c "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"
-        chmod a+x linuxdeployqt-continuous-x86_64.AppImage
-        ./linuxdeployqt-continuous-x86_64.AppImage --appimage-extract
+    steps:
+      - name: Clone ImageMagick
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
-    - name: Build ImageMagick
-      env:
-        CFLAGS: -Wno-deprecated-declarations -Wdeclaration-after-statement -Wno-error=unused-variable
-        CC: ${{ matrix.compiler }}
-        CXX: ${{ matrix.cxx_compiler }}
-      run: |
-        set -e
-        ./configure --with-quantum-depth=16 --without-magick-plus-plus --without-perl --prefix=/usr
-        make
-        make install DESTDIR=$(readlink -f /appdir)
+      - name: Install dependencies
+        run: npm install -g git+https://github.com/CookPete/auto-changelog.git#5ba380ad0044dd5be1b2bf4067f64d87202c98bd #v2.5.0
 
-    - name: Create ImageMagick AppImage
-      run: |
-        set -e
-        mkdir -p /appdir/usr/share/applications/
-        cp ./app-image/imagemagick.desktop /appdir/usr/share/applications/
-        mkdir -p /appdir/usr/share/icons/hicolor/128x128/apps/
-        cp ./app-image/icon.png /appdir/usr/share/icons/hicolor/128x128/apps/imagemagick.png
-        unset QTDIR
-        unset QT_PLUGIN_PATH
-        unset LD_LIBRARY_PATH
-        export VERSION=$(git rev-parse --short HEAD)-${{ matrix.compiler }}
-        /app-image/linuxdeployqt-continuous-x86_64.AppImage --appimage-extract-and-run /appdir/usr/share/applications/imagemagick.desktop -bundle-non-qt-libs
-        rm /appdir/AppRun
-        cp ./app-image/AppRun /appdir
-        chmod a+x /appdir/AppRun
-        PATH=/app-image/squashfs-root/usr/bin:$PATH
-        /app-image/squashfs-root/usr/bin/appimagetool -g /appdir/
-        mkdir artifacts
-        cp ImageMagick-$VERSION-x86_64.AppImage artifacts
-        find /appdir -executable -type f -exec ldd {} \; | grep " => /usr" | cut -d " " -f 2-3 | sort | uniq
+      - name: Create ChangeLog.md
+        env:
+          VERSION: ${{needs.version.outputs.version}}
+        run: |
+          if ! git tag -l | grep -q "^$VERSION$"; then
+            git tag $VERSION
+          fi
+          auto-changelog --sort-commits date
+          mkdir -p Artifacts
+          mv ChangeLog.md Artifacts/ChangeLog.md
 
-    - name: Upload ImageMagick AppImage
-      uses: actions/upload-artifact@v4
-      with:
-        name: AppImage-${{ matrix.compiler }}
-        path: artifacts
+      - name: Upload ChangeLog.md
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: ChangeLog
+          path: Artifacts
 
-  build_windows:
-    name: 'Build ${{ matrix.quantum }}${{ matrix.hdri_flag }} (${{ matrix.platform }})'
-    runs-on: windows-latest
+  windows_installer:
+    name: Windows ${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}} (${{matrix.buildType}})
+    runs-on: windows-2025-vs2026
+    needs:
+      - changelog
+      - version
+
+    permissions:
+      contents: read
+      id-token: write
 
     strategy:
       fail-fast: false
       matrix:
-        platform: [ x64, arm64 ]
-        quantum: [ Q16 ]
-        hdri: [ HDRI ]
+        architecture: [ x64, arm64, x86 ]
+        buildType: [ dynamic, static ]
+        quantum: [ Q16, Q8 ]
+        hdri: [ hdri, noHdri ]
         exclude:
           - quantum: Q8
-            hdri: HDRI
+            hdri: hdri
         include:
-          - hdri: HDRI
-            hdri_flag: '-HDRI'
+          - architecture: x64
+            bit: 64
+          - architecture: arm64
+            bit: 64
+          - architecture: x86
+            bit: 32
+          - buildType: dynamic
+            typeName: dll
+          - buildType: static
+            typeName: static
+          - hdri: hdri
+            hdri_flag: -HDRI
 
     steps:
-    - name: Clone ImageMagick
-      uses: actions/checkout@v4
-      with:
-        path: ImageMagick
+      - name: Install Strawberry Perl
+        if: ${{matrix.buildType == 'dynamic' && matrix.architecture != 'arm64'}}
+        shell: cmd
+        run: |
+          powershell Invoke-WebRequest -Uri https://github.com/ImageMagick/Windows/releases/download/build-binaries-2025-08-30/strawberry-perl-5.30.2.1-${{matrix.bit}}bit.msi -OutFile strawberry-perl-5.30.2.1-${{matrix.bit}}bit.msi
+          msiexec /i strawberry-perl-5.30.2.1-${{matrix.bit}}bit.msi /qn INSTALLDIR="C:\Strawberry${{matrix.bit}}"
+          mv "C:\Strawberry" "C:\Strawberry64"
 
-    - name: Clone ImageMagick-Windows
-      uses: actions/checkout@v4
-      with:
-        repository: ImageMagick/ImageMagick-Windows
-        path: ImageMagick-Windows
+      - name: Install Inno Setup
+        shell: cmd
+        run: |
+          powershell Invoke-WebRequest -Uri https://github.com/ImageMagick/Windows/releases/download/build-binaries-2025-08-30/innosetup-6.2.0.exe -OutFile innosetup-6.2.0.exe
+          innosetup-6.2.0.exe /SILENT /SUPPRESSMSGBOXES /NORESTART /SP-
 
-    - name: Clone repositories
-      shell: cmd
-      run: |
-        cd ImageMagick-Windows
-        CloneRepositories.IM7.cmd
+      - name: Clone ImageMagick
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          path: ImageMagick
+          persist-credentials: false
 
-    - name: Build configure
-      shell: cmd
-      run: |
-        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"
-        cd ImageMagick-Windows\Configure
-        msbuild Configure.sln /m /t:Rebuild /p:Configuration=Release,Platform=x64
+      - name: Download configure
+        shell: cmd
+        run: |
+          ImageMagick\.github\build\windows\download-configure.cmd
 
-    - name: Configure ImageMagick
-      shell: cmd
-      run: |
-        cd ImageMagick-Windows\Configure
-        Configure.exe /VS2022 /noWizard /noAliases /${{ matrix.hdri }} /${{ matrix.quantum }} /${{ matrix.platform }} /smtd
+      - name: Download dependencies
+        shell: cmd
+        run: |
+          ImageMagick\.github\build\windows\download-dependencies.cmd windows-${{matrix.architecture}}-${{matrix.buildType}}-openMP.zip
 
-    - name: Build ImageMagick (${{ matrix.platform }})
-      shell: cmd
-      run: |
-        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"
-        cd ImageMagick-Windows
-        msbuild /m /t:Rebuild /p:Configuration=Release,Platform=${{matrix.platform}}
+      - name: Download ChangeLog.md
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
+        with:
+          name: ChangeLog
+          path: ImageMagick
 
-    - uses: actions/upload-artifact@v4
-      with:
-        name: Windows-${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.platform}}
-        path: |
-          ImageMagick-Windows\Output\bin\*.xml
-          ImageMagick-Windows\Output\bin\*.exe
+      - name: Configure ImageMagick
+        shell: cmd
+        working-directory: Configure
+        run: |
+          Configure.Release.x64.exe /noWizard /VS2026 /installedSupport /deprecated /${{matrix.hdri}} /${{matrix.quantum}} /${{matrix.architecture}} /${{matrix.buildType}}
 
-  version:
-    name: Set release and version
-    runs-on: windows-latest
-    outputs:
-      release: ${{ steps.version.outputs.release }}
-      version: ${{ steps.version.outputs.version }}
+      - name: Build ImageMagick
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\Common7\Tools\VsDevCmd.bat"
+          msbuild /m /t:Rebuild /p:Configuration=Release,Platform=${{matrix.architecture}}
+
+      - name: Build PerlMagick
+        if: ${{matrix.buildType == 'dynamic' && matrix.architecture != 'arm64'}}
+        shell: cmd
+        run: |
+          set PATH=
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\Common7\Tools\VsDevCmd.bat"
+          cd ImageMagick\PerlMagick
+          set PATH=%PATH%;C:\Strawberry${{matrix.bit}}\c\bin;C:\Strawberry${{matrix.bit}}\perl\site\bin;C:\Strawberry${{matrix.bit}}\perl\bin;C:\WINDOWS\System32\WindowsPowerShell\v1.0
+          perl "Makefile.PL" "MAKE=nmake" "CC=g++"
+          nmake
+          nmake release
+
+      - name: Sign executables and libraries
+        uses: ImageMagick/code-signing-action@11c51f7659405bee4dd3529748e1501a0d388911 #v1.0.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          directory: ${{ github.workspace }}\Artifacts\bin
+          files: '*.exe *.dll'
+
+      - name: Create installer
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\Common7\Tools\VsDevCmd.bat"
+          "C:\Program Files (x86)\Inno Setup 6\iscc.exe" Configure\Installer\Inno\ImageMagick.iss
+
+      - name: Sign installer
+        uses: ImageMagick/code-signing-action@11c51f7659405bee4dd3529748e1501a0d388911 #v1.0.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          directory: ${{ github.workspace }}\Configure\Installer\Inno\Artifacts
+          files: '*.exe'
+
+      - name: Create SBOM
+        shell: cmd
+        env:
+          MAGICK_COMMIT: ${{github.sha}}
+          MAGICK_TIMESTAMP: ${{needs.version.outputs.timestamp}}
+          MAGICK_VERSION: ${{needs.version.outputs.version}}
+          FILENAME: ImageMagick-${{needs.version.outputs.version}}-${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}-${{matrix.typeName}}.cdx.json
+        run: |
+          python ImageMagick\.github\build\shared\create-sbom.py Configure\Installer\Inno\Artifacts\%FILENAME%
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: ImageMagick-${{needs.version.outputs.version}}-${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}-${{matrix.typeName}}.exe
+          path: Configure\Installer\Inno\Artifacts
+
+  windows_source:
+    name: Create Windows source archive
+    if: github.event_name != 'pull_request'
+    runs-on: windows-2025
+    needs:
+      - changelog
+      - version
 
     steps:
-    - name: Clone ImageMagick
-      uses: actions/checkout@v4
-      with:
-        path: ImageMagick
+      - name: Clone ImageMagick/Windows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          repository: ImageMagick/Windows
+          ref: refs/heads/main
+          persist-credentials: false
 
-    - name: Set release and version
-      id: version
-      run: |
-        $release = (Get-Content ImageMagick\configure -Raw) | Select-String -Pattern "PACKAGE_VERSION='([0-9\.-]*)" -AllMatches | % { $_.Matches } | % { $_.Groups[1].Value }
-        $version = $release -replace '-', '.'
-        echo "release=$release" >> $env:GITHUB_OUTPUT
-        echo "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Clone repositories
+        shell: cmd
+        run: |
+          clone-repositories-im7.cmd ${{github.sha}}
 
-  create_msix:
-    name: 'Create Msix ${{matrix.quantum}}${{matrix.hdri_flag}}'
-    runs-on: windows-latest
+      - name: Download ChangeLog.md
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
+        with:
+          name: ChangeLog
+          path: ImageMagick
+
+      - name: Create Windows source archive
+        shell: cmd
+        env:
+          VERSION: ${{needs.version.outputs.version}}
+        run: |
+          mkdir source
+          move Configure source
+          move Dependencies source
+          move ImageMagick source
+          7z a -mx=9 ImageMagick-%VERSION%-Windows.7z .\source\*
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: ImageMagick-${{needs.version.outputs.version}}-Windows.7z
+          path: ImageMagick-${{needs.version.outputs.version}}-Windows.7z
+
+  windows_portable:
+    name: Windows portable ${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}
+    runs-on: windows-2025-vs2026
+    needs:
+      - changelog
+      - version
+
+    permissions:
+      contents: read
+      id-token: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [ x64, arm64, x86 ]
+        quantum: [ Q16, Q8 ]
+        hdri: [ hdri, noHdri ]
+        exclude:
+          - quantum: Q8
+            hdri: hdri
+        include:
+          - hdri: hdri
+            hdri_flag: -HDRI
+
+    steps:
+      - name: Clone ImageMagick
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          path: ImageMagick
+          persist-credentials: false
+
+      - name: Download configure
+        shell: cmd
+        run: |
+          ImageMagick\.github\build\windows\download-configure.cmd
+
+      - name: Download dependencies
+        shell: cmd
+        run: |
+          ImageMagick\.github\build\windows\download-dependencies.cmd windows-${{matrix.architecture}}-static-openMP-linked-runtime.zip
+
+      - name: Download ChangeLog.md
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
+        with:
+          name: ChangeLog
+          path: ImageMagick
+
+      - name: Configure ImageMagick
+        shell: cmd
+        working-directory: Configure
+        run: |
+          Configure.Release.x64.exe /noWizard /VS2026 /${{matrix.hdri}} /${{matrix.quantum}} /${{matrix.architecture}} /static /linkRuntime
+
+      - name: Build ImageMagick
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\Common7\Tools\VsDevCmd.bat"
+          msbuild /m /t:Rebuild /p:Configuration=Release,Platform=${{matrix.architecture}}
+
+      - name: Sign executables and libraries
+        uses: ImageMagick/code-signing-action@11c51f7659405bee4dd3529748e1501a0d388911 #v1.0.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          directory: ${{ github.workspace }}\Artifacts\bin
+          files: '*.exe *.dll'
+
+      - name: Copy Files
+        shell: pwsh
+        env:
+          VERSION: ${{needs.version.outputs.version}}
+        run: |
+          [void](New-Item -Name "portable" -ItemType directory)
+          Copy-Item "Artifacts\bin\*.exe" "portable"
+          Copy-Item "Artifacts\bin\*.xml" "portable"
+          Copy-Item "Artifacts\bin\sRGB.icc" "portable"
+
+          Copy-Item "Artifacts\NOTICE.txt" "portable"
+          Copy-Item "ImageMagick\ChangeLog.md" "portable"
+          Copy-Item "ImageMagick\LICENSE" "portable\LICENSE.txt"
+          7z a -mx=9 "ImageMagick-$env:VERSION-portable-${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}.7z" .\portable\*
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: ImageMagick-${{needs.version.outputs.version}}-portable-${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}.7z
+          path: ImageMagick-${{needs.version.outputs.version}}-portable-${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}.7z
+
+      - name: Create SBOM
+        shell: cmd
+        env:
+          MAGICK_COMMIT: ${{github.sha}}
+          MAGICK_TIMESTAMP: ${{needs.version.outputs.timestamp}}
+          MAGICK_VERSION: ${{needs.version.outputs.version}}
+          FILENAME: ImageMagick-${{needs.version.outputs.version}}-portable-${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}.cdx.json
+        run: |
+          python ImageMagick\.github\build\shared\create-sbom.py %FILENAME%
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: ImageMagick-${{needs.version.outputs.version}}-portable-${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}.cdx.json
+          path: ImageMagick-${{needs.version.outputs.version}}-portable-${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}.cdx.json
+
+  windows_msix:
+    name: Create Msix ${{matrix.quantum}}${{matrix.hdri_flag}}
+    if: github.event_name != 'pull_request'
+    runs-on: windows-2025
     environment: release
     needs:
       - version
-      - build_windows
+      - windows_portable
 
     permissions:
-      id-token: write
       contents: read
+      id-token: write
 
     strategy:
       fail-fast: false
       matrix:
-        quantum: [ Q16 ]
-        hdri: [ HDRI ]
+        quantum: [ Q16, Q8 ]
+        hdri: [ hdri, noHdri ]
         exclude:
           - quantum: Q8
-            hdri: HDRI
+            hdri: hdri
         include:
-          - hdri: HDRI
-            hdri_flag: '-HDRI'
+          - hdri: hdri
+            hdri_flag: -HDRI
 
     steps:
-    - name: Clone ImageMagick-Windows
-      uses: actions/checkout@v4
-      with:
-        repository: ImageMagick/ImageMagick-Windows
-        path: ImageMagick-Windows
+      - name: Clone ImageMagick
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          path: ImageMagick
+          persist-credentials: false
 
-    - name: Download x64 artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: Windows-${{matrix.quantum}}${{matrix.hdri_flag}}-x64
-        path: ImageMagick-Windows\Installer\Msix\x64
+      - name: Download configure
+        shell: cmd
+        run: |
+          ImageMagick\.github\build\windows\download-configure.cmd
 
-    - name: Download arm64 artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: Windows-${{matrix.quantum}}${{matrix.hdri_flag}}-arm64
-        path: ImageMagick-Windows\Installer\Msix\arm64
+      - name: Download x64 artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
+        with:
+          name: ImageMagick-${{needs.version.outputs.version}}-portable-${{matrix.quantum}}${{matrix.hdri_flag}}-x64.7z
+          path: Configure\Installer\Msix\x64
 
-    - name: 'Azure CLI login with federated credential'
-      uses: azure/login@v2
-      with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Unzip artifacts
+        shell: pwsh
+        env:
+          VERSION: ${{needs.version.outputs.version}}
+        run: |
+          cd Configure\Installer\Msix\x64
+          7z x "ImageMagick-$env:VERSION-portable-${{matrix.quantum}}${{matrix.hdri_flag}}-x64.7z"
 
-    - name: Create msixbundle with Advanced Installer
-      if: github.event_name != 'pull_request'
-      uses: caphyon/advinst-github-action@v2.0
-      with:
-        advinst-license: ${{ secrets.ADVINST_LICENSE_KEY }}
-        aip-path: ImageMagick-Windows\Installer\Msix\ImageMagick.${{matrix.quantum}}${{matrix.hdri_flag}}.aip
-        aip-build-name: Build_MSIX
-        aip-commands: |
-            SetVersion ${{ needs.version.outputs.version }}
+      - name: Azure CLI login with federated credential
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 #v3.1.0
+        with:
+          client-id: ${{secrets.AZURE_CLIENT_ID}}
+          tenant-id: ${{secrets.AZURE_TENANT_ID}}
+          subscription-id: ${{secrets.AZURE_SUBSCRIPTION_ID}}
 
-    - uses: actions/upload-artifact@v4
-      if: github.event_name != 'pull_request'
-      with:
-        name: Msix-${{matrix.quantum}}${{matrix.hdri_flag}}
-        path: 'ImageMagick-Windows\Installer\Msix\Output\ImageMagick.${{matrix.quantum}}${{matrix.hdri_flag}}.msixbundle'
+      - name: Create msixbundle with Advanced Installer
+        uses: caphyon/advinst-github-action@7edde34c6ff935e53e3de72a5699efcfceb5f6c6 #v2.0.3
+        with:
+          advinst-license: ${{secrets.ADVINST_LICENSE_KEY}}
+          aip-path: Configure\Installer\Msix\ImageMagick.${{matrix.quantum}}${{matrix.hdri_flag}}.aip
+          aip-build-name: Build_MSIX
+          aip-commands: |
+              SetVersion ${{needs.version.outputs.semantic_version}}
 
-  create_release:
-    name: Create Release
-    if: startsWith(github.ref, 'refs/tags/')
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: ImageMagick.${{matrix.quantum}}${{matrix.hdri_flag}}.msixbundle
+          path: Configure\Installer\Msix\Artifacts\ImageMagick.${{matrix.quantum}}${{matrix.hdri_flag}}.msixbundle
+
+  linux_app_image:
+    name: Linux AppImage
+    container:
+      image: ubuntu:22.04
+    runs-on: ubuntu-24.04
     needs:
-      - create_app_image
-      - create_msix
-    runs-on: ubuntu-latest
+      - version
+
+    steps:
+      - name: Install dependencies
+        run: |
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -y
+          apt-get install -y autoconf curl file fuse git kmod squashfs-tools libbz2-dev libdjvulibre-dev libfontconfig-dev libfreetype6-dev libfribidi-dev libharfbuzz-dev libheif-dev liblcms-dev libopenexr-dev libopenjp2-7-dev libturbojpeg0-dev liblqr-dev libraqm-dev libtiff-dev libwebp-dev libx11-dev libxml2-dev liblzma-dev make software-properties-common wget gcc g++
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          persist-credentials: false
+
+        # Avoid fatal: detected dubious ownership in repository at '/__w/ImageMagick/ImageMagick'
+        # Possible workaround: https://github.com/actions/runner/issues/2033#issuecomment-1598547465
+      - name: Flag current workspace as safe for git
+        run: git config --global --add safe.directory ${GITHUB_WORKSPACE}
+
+      - name: Download AppImage
+        run: |
+          mkdir /app-image
+          cd /app-image
+          wget -c "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"
+          chmod a+x linuxdeployqt-continuous-x86_64.AppImage
+          ./linuxdeployqt-continuous-x86_64.AppImage --appimage-extract
+
+      - name: Build ImageMagick
+        env:
+          CFLAGS: -Wno-deprecated-declarations -Wdeclaration-after-statement -Wno-error=unused-variable
+          CC: gcc
+          CXX: g++
+        run: |
+          set -e
+          ./configure --with-quantum-depth=16 --without-magick-plus-plus --without-perl --prefix=/usr
+          make
+          make install DESTDIR=$(readlink -f /appdir)
+
+      - name: Create ImageMagick AppImage
+        env:
+          VERSION: ${{needs.version.outputs.version}}
+        run: |
+          set -e
+          mkdir -p /appdir/usr/share/applications/
+          cp ./app-image/imagemagick.desktop /appdir/usr/share/applications/
+          mkdir -p /appdir/usr/share/icons/hicolor/128x128/apps/
+          cp ./app-image/icon.png /appdir/usr/share/icons/hicolor/128x128/apps/imagemagick.png
+          unset QTDIR
+          unset QT_PLUGIN_PATH
+          unset LD_LIBRARY_PATH
+          /app-image/linuxdeployqt-continuous-x86_64.AppImage --appimage-extract-and-run /appdir/usr/share/applications/imagemagick.desktop -bundle-non-qt-libs
+          rm /appdir/AppRun
+          cp ./app-image/AppRun /appdir
+          chmod a+x /appdir/AppRun
+          PATH=/app-image/squashfs-root/usr/bin:$PATH
+          /app-image/squashfs-root/usr/bin/appimagetool -g /appdir/
+          mkdir artifacts
+          cp ImageMagick-$VERSION-x86_64.AppImage artifacts
+          find /appdir -executable -type f -exec ldd {} \; | grep " => /usr" | cut -d " " -f 2-3 | sort | uniq
+
+      - name: Upload ImageMagick AppImage
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: AppImage
+          path: artifacts
+
+  linux_portable:
+    name: Linux portable Q${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}
+    container:
+      image: ubuntu:20.04
+    runs-on: ${{matrix.runner}}
+    needs:
+      - changelog
+      - version
+
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [ x64, arm64 ]
+        quantum: [ 16, 8 ]
+        hdri: [ yes, no ]
+        exclude:
+          - quantum: 8
+            hdri: yes
+        include:
+          - architecture: x64
+            runner: ubuntu-24.04
+            triplet: x86_64-linux-gnu
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+            triplet: aarch64-linux-gnu
+          - hdri: yes
+            hdri_flag: -HDRI
+
+    env:
+      PACKAGE_NAME: ImageMagick-${{needs.version.outputs.version}}-portable-Q${{matrix.quantum}}${{matrix.hdri_flag}}-linux-${{matrix.architecture}}
+
+    steps:
+      - name: Install dependencies
+        run: |
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -y
+          apt-get install -y autoconf ca-certificates curl gcc g++ git make pkg-config python3 unzip xz-utils
+
+      - name: Clone ImageMagick
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download dependencies
+        run: |
+          bash .github/build/shared/download-dependencies.sh --dependencies-artifact linux-${{matrix.architecture}}-static.zip
+          mkdir -p /tmp/dependencies
+          mv Artifacts/include Artifacts/lib /tmp/dependencies/
+
+      - name: Download ChangeLog.md
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
+        with:
+          name: ChangeLog
+
+      - name: Configure ImageMagick
+        env:
+          CC: gcc
+          CXX: g++
+          CFLAGS: -O3
+          CXXFLAGS: -O3
+          CPPFLAGS: -I/tmp/dependencies/include
+          LDFLAGS: -L/tmp/dependencies/lib -L/tmp/dependencies/lib/${{matrix.triplet}} -static-libstdc++ -static-libgcc
+          PKG_CONFIG_LIBDIR: /tmp/dependencies/lib/pkgconfig:/tmp/dependencies/lib/${{matrix.triplet}}/pkgconfig
+          PKG_CONFIG: pkg-config --static
+        run: |
+          cp "$(g++ -print-file-name=libstdc++.a)" /tmp/dependencies/lib/
+          ./configure --prefix=/usr --disable-installed --disable-shared --enable-static --without-modules --without-magick-plus-plus --without-perl --without-x --with-rsvg --with-quantum-depth=${{matrix.quantum}} --enable-hdri=${{matrix.hdri}}
+
+      - name: Build ImageMagick
+        run: |
+          make -j$(nproc)
+          make install DESTDIR="$GITHUB_WORKSPACE/portable"
+
+      - name: Create portable archive
+        run: |
+          bash .github/build/shared/create-portable.sh
+
+      - name: Create SBOM
+        env:
+          MAGICK_COMMIT: ${{github.sha}}
+          MAGICK_TIMESTAMP: ${{needs.version.outputs.timestamp}}
+          MAGICK_VERSION: ${{needs.version.outputs.version}}
+        run: |
+          python3 .github/build/shared/create-sbom.py "artifacts/$PACKAGE_NAME.cdx.json"
+
+      - name: Upload portable archive and SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: ImageMagick-${{needs.version.outputs.version}}-portable-Q${{matrix.quantum}}${{matrix.hdri_flag}}-linux-${{matrix.architecture}}
+          path: artifacts
+
+  linux_musl_portable:
+    name: Linux musl portable Q${{matrix.quantum}}${{matrix.hdri_flag}}-${{matrix.architecture}}
+    container:
+      image: alpine:3.21
+    runs-on: ubuntu-24.04
+    needs:
+      - changelog
+      - version
+
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [ x64, arm64 ]
+        quantum: [ 16, 8 ]
+        hdri: [ yes, no ]
+        exclude:
+          - quantum: 8
+            hdri: yes
+        include:
+          - architecture: x64
+            cc: clang-18
+            cxx: clang++-18
+            configure_options: ''
+            link_options: ''
+          - architecture: arm64
+            cc: clang-18 --target=aarch64-alpine-linux-musl --sysroot=/usr/aarch64-alpine-linux-musl
+            cxx: clang++-18 --target=aarch64-alpine-linux-musl --sysroot=/usr/aarch64-alpine-linux-musl
+            configure_options: --host=aarch64-alpine-linux-musl
+            link_options: -L/usr/aarch64-alpine-linux-musl/usr/lib
+          - hdri: yes
+            hdri_flag: -HDRI
+
+    env:
+      PACKAGE_NAME: ImageMagick-${{needs.version.outputs.version}}-portable-Q${{matrix.quantum}}${{matrix.hdri_flag}}-linux-musl-${{matrix.architecture}}
+
+    steps:
+      - name: Install dependencies
+        run: |
+          apk add --no-cache autoconf automake bash build-base ca-certificates clang18 curl git linux-headers openmp-dev pkgconf python3 tar unzip xz
+
+      - name: Install ARM64 cross compiler
+        if: matrix.architecture == 'arm64'
+        run: |
+          apk add --no-cache binutils-aarch64 clang18
+          apk add --root /usr/aarch64-alpine-linux-musl --arch aarch64 --initdb --no-scripts --no-cache \
+            --keys-dir /usr/share/apk/keys/aarch64 --repositories-file /etc/apk/repositories \
+            g++ linux-headers musl-dev openmp-dev
+
+      - name: Clone ImageMagick
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download dependencies
+        run: |
+          bash .github/build/shared/download-dependencies.sh --dependencies-artifact linux-musl-${{matrix.architecture}}-static.zip
+
+      - name: Download ChangeLog.md
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
+        with:
+          name: ChangeLog
+
+      - name: Build ImageMagick
+        env:
+          CC: ${{matrix.cc}}
+          CXX: ${{matrix.cxx}}
+          CFLAGS: -O3
+          CXXFLAGS: -O3
+          CPPFLAGS: -I/tmp/dependencies/include
+          LDFLAGS: -L/tmp/dependencies/lib ${{matrix.link_options}} -static-libstdc++ -static-libgcc
+          PKG_CONFIG_LIBDIR: /tmp/dependencies/lib/pkgconfig
+          PKG_CONFIG: pkg-config --static
+        run: |
+          set -e
+          mkdir -p /tmp/dependencies
+          cp -a Artifacts/include Artifacts/lib /tmp/dependencies/
+          cp "$($CXX -print-file-name=libstdc++.a)" /tmp/dependencies/lib/
+          ./configure ${{matrix.configure_options}} --prefix=/usr --disable-installed --disable-shared --enable-static --without-modules --without-magick-plus-plus --without-perl --without-x --with-rsvg --with-quantum-depth=${{matrix.quantum}} --enable-hdri=${{matrix.hdri}}
+          make -j$(nproc)
+          make install DESTDIR="$GITHUB_WORKSPACE/portable"
+
+      - name: Create portable archive
+        run: |
+          bash .github/build/shared/create-portable.sh
+
+      - name: Create SBOM
+        env:
+          MAGICK_COMMIT: ${{github.sha}}
+          MAGICK_TIMESTAMP: ${{needs.version.outputs.timestamp}}
+          MAGICK_VERSION: ${{needs.version.outputs.version}}
+        run: |
+          python3 .github/build/shared/create-sbom.py "artifacts/$PACKAGE_NAME.cdx.json"
+
+      - name: Upload portable archive and SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: ImageMagick-${{needs.version.outputs.version}}-portable-Q${{matrix.quantum}}${{matrix.hdri_flag}}-linux-musl-${{matrix.architecture}}
+          path: artifacts
+
+  macos_portable:
+    name: macOS portable Q${{matrix.quantum}}${{matrix.hdri_flag}}-arm64
+    runs-on: macos-15
+    needs:
+      - changelog
+      - version
+
+    strategy:
+      fail-fast: false
+      matrix:
+        quantum: [ 16, 8 ]
+        hdri: [ yes, no ]
+        exclude:
+          - quantum: 8
+            hdri: yes
+        include:
+          - hdri: yes
+            hdri_flag: -HDRI
+
+    env:
+      PACKAGE_NAME: ImageMagick-${{needs.version.outputs.version}}-portable-Q${{matrix.quantum}}${{matrix.hdri_flag}}-macos-arm64
+      HOMEBREW_NO_AUTO_UPDATE: 1
+
+    steps:
+      - name: Clone ImageMagick
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: |
+          brew install autoconf automake libtool libomp pkgconf xz
+
+      - name: Download dependencies
+        run: |
+          bash .github/build/shared/download-dependencies.sh --dependencies-artifact macos-arm64-static.zip
+          mkdir -p /tmp/dependencies
+          mv Artifacts/include Artifacts/lib /tmp/dependencies/
+          rm /tmp/dependencies/lib/libintl.dylib
+
+      - name: Download ChangeLog.md
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
+        with:
+          name: ChangeLog
+
+      - name: Configure ImageMagick
+        env:
+          CC: clang
+          CXX: clang++
+          PKG_CONFIG_LIBDIR: /tmp/dependencies/lib/pkgconfig
+          PKG_CONFIG: pkg-config --static
+        run: |
+          openmp_prefix=$(brew --prefix libomp)
+          export CFLAGS="-O3"
+          export CXXFLAGS="$CFLAGS"
+          export CPPFLAGS="-I/tmp/dependencies/include -Xpreprocessor -fopenmp -I$openmp_prefix/include"
+          export LDFLAGS="-L/tmp/dependencies/lib -L$openmp_prefix/lib -Wl,-rpath,$openmp_prefix/lib"
+          export LIBS="-lomp"
+          ./configure --prefix=/usr --disable-installed --disable-shared --enable-static --without-modules --without-magick-plus-plus --without-perl --without-x --with-rsvg --with-quantum-depth=${{matrix.quantum}} --enable-hdri=${{matrix.hdri}}
+
+      - name: Build ImageMagick
+        run: |
+          make -j$(sysctl -n hw.logicalcpu)
+          make install DESTDIR="$GITHUB_WORKSPACE/portable"
+
+      - name: Create portable archive
+        run: |
+          bash .github/build/shared/create-portable.sh
+
+      - name: Create SBOM
+        env:
+          MAGICK_COMMIT: ${{github.sha}}
+          MAGICK_TIMESTAMP: ${{needs.version.outputs.timestamp}}
+          MAGICK_VERSION: ${{needs.version.outputs.version}}
+        run: |
+          python3 .github/build/shared/create-sbom.py "artifacts/$PACKAGE_NAME.cdx.json"
+
+      - name: Upload portable archive and SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: ImageMagick-${{needs.version.outputs.version}}-portable-Q${{matrix.quantum}}${{matrix.hdri_flag}}-macos-arm64
+          path: artifacts
+
+  source:
+    name: Create source archive
+    runs-on: ubuntu-24.04
+    needs:
+      - changelog
+      - version
+
+    steps:
+      - name: Clone ImageMagick
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          path: ImageMagick
+          persist-credentials: false
+
+      - name: Download ChangeLog.md
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
+        with:
+          name: ChangeLog
+          path: ImageMagick
+
+      - name: Create source archive
+        env:
+          VERSION: ${{needs.version.outputs.version}}
+        run: |
+          set -e
+          DIRECTORIES=(
+            ".devcontainer"
+            ".git"
+            ".github"
+            "api_examples"
+            "logo"
+            "oss-fuzz"
+          )
+          FILES=(
+            ".auto-changelog"
+            ".editorconfig"
+            ".gitignore"
+          )
+          for dir_name in "${DIRECTORIES[@]}"; do
+            path="ImageMagick/$dir_name"
+            if [[ -e "$path" ]]; then
+              rm -rf -- "$path"
+              echo "Removed: $dir_name"
+            else
+              echo "Not found: $dir_name"
+              exit 1
+            fi
+          done
+          for file_name in "${FILES[@]}"; do
+            path="ImageMagick/$file_name"
+            if [[ -e "$path" ]]; then
+              rm -f -- "$path"
+              echo "Removed: $file_name"
+            else
+              echo "Not found: $file_name"
+              exit 1
+            fi
+          done
+          mv ImageMagick "ImageMagick-$VERSION"
+          mkdir artifacts
+          7z a -mx=9 "artifacts/ImageMagick-$VERSION.7z" "ImageMagick-$VERSION"
+          XZ_OPT="-9e" tar -cJf "artifacts/ImageMagick-$VERSION.tar.xz" "ImageMagick-$VERSION"
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+        with:
+          name: ImageMagick-${{needs.version.outputs.version}}.7z
+          path: artifacts
+
+  release:
+    name: Publish Release
+    if: ${{ needs.version.outputs.publish == 'true' }}
+    runs-on: ubuntu-24.04
+    needs:
+      - version
+      - source
+      - linux_app_image
+      - linux_portable
+      - linux_musl_portable
+      - macos_portable
+      - windows_installer
+      - windows_portable
+      - windows_source
+      - windows_msix
 
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
+      - name: Clone ImageMagick
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          persist-credentials: false
 
-    - name: Publish release
-      uses: softprops/action-gh-release@v2
-      with:
-        generate_release_notes: true
-        files: |
-          artifacts/AppImage-clang/ImageMagick-*-clang-x86_64.AppImage
-          artifacts/AppImage-gcc/ImageMagick-*-gcc-x86_64.AppImage
-          artifacts/Msix-Q16-HDRI/ImageMagick.Q16-HDRI.msixbundle
+      - name: Download artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
+        with:
+          path: artifacts
+          merge-multiple: true
 
-  publish_msix:
-    name: 'Publish Msix ${{matrix.quantum}}${{matrix.hdri_flag}}'
-    if: startsWith(github.ref, 'refs/tags/')
+      - name: Generate SLSA provenance
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 #v4.2.2
+        with:
+          subject-path: |
+            ${{github.workspace}}/artifacts/*.7z
+            ${{github.workspace}}/artifacts/*.AppImage
+            ${{github.workspace}}/artifacts/*.exe
+            ${{github.workspace}}/artifacts/*.msixbundle
+            ${{github.workspace}}/artifacts/*.xz
+
+      - name: Save provenance as an artifact
+        env:
+          BUNDLE_PATH: ${{steps.attest.outputs.bundle-path}}
+          VERSION: ${{needs.version.outputs.version}}
+        run: |
+          cp "$BUNDLE_PATH" "${{github.workspace}}/artifacts/ImageMagick-$VERSION.intoto.jsonl"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{github.token}}
+          VERSION: ${{needs.version.outputs.version}}
+        run: |
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes "$VERSION" \
+            ${{github.workspace}}/artifacts/*.7z \
+            ${{github.workspace}}/artifacts/*.AppImage \
+            ${{github.workspace}}/artifacts/*.exe \
+            ${{github.workspace}}/artifacts/*.intoto.jsonl \
+            ${{github.workspace}}/artifacts/*.msixbundle \
+            ${{github.workspace}}/artifacts/*.cdx.json \
+            ${{github.workspace}}/artifacts/*.xz
+
+  prepare_msix:
+    name: Prepare Msix
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Sync forked winget-pkgs repository
+        env:
+          GH_TOKEN: ${{secrets.WINGET_TOKEN}}
+        run: gh repo sync dlemstra/winget-pkgs --source microsoft/winget-pkgs
+
+  release_msix:
+    name: Publish Msix ${{matrix.quantum}}${{matrix.hdri_flag}}
     needs:
       - version
-      - create_release
-    runs-on: windows-latest
+      - release
+      - prepare_msix
+    runs-on: windows-2025
 
     strategy:
       fail-fast: false
       matrix:
-        quantum: [ Q16 ]
-        hdri: [ HDRI ]
+        quantum: [ Q16, Q8 ]
+        hdri: [ hdri, noHdri ]
         exclude:
           - quantum: Q8
-            hdri: HDRI
+            hdri: hdri
         include:
-          - hdri: HDRI
-            hdri_flag: '-HDRI'
+          - hdri: hdri
+            hdri_flag: -HDRI
 
     steps:
-    - name: Install winget
-      uses: Cyberboss/install-winget@v1
-      with:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install wingetcreate
+        run: winget install wingetcreate --disable-interactivity --accept-source-agreements
 
-    - name: Install wingetcreate
-      run: winget install wingetcreate --disable-interactivity --accept-source-agreements
+      - name: Update manifest on winget
+        env:
+          VERSION: ${{needs.version.outputs.version}}
+          SEMANTIC_VERSION: ${{needs.version.outputs.semantic_version}}
+          WINGET_CREATE_GITHUB_TOKEN: ${{secrets.WINGET_TOKEN}}
+        run: wingetcreate update --submit --replace --urls "https://github.com/ImageMagick/ImageMagick/releases/download/$env:VERSION/ImageMagick.${{matrix.quantum}}${{matrix.hdri_flag}}.msixbundle" --version $env:SEMANTIC_VERSION "ImageMagick.${{matrix.quantum}}${{matrix.hdri_flag}}"
 
-    - name: Update manifest on winget
-      run: wingetcreate update --submit --replace --token ${{ secrets.WINGET_TOKEN }} --urls https://github.com/ImageMagick/ImageMagick/releases/download/${{ needs.version.outputs.release }}/ImageMagick.${{matrix.quantum}}${{matrix.hdri_flag}}.msixbundle --version ${{ needs.version.outputs.version }} ImageMagick.${{matrix.quantum}}${{matrix.hdri_flag}}
+  update_website:
+    name: Update website
+    runs-on: ubuntu-24.04
+    needs:
+      - version
+      - release
+
+    steps:
+      - name: Create GitHub app token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 #v3.3.0
+        id: app-token
+        with:
+          client-id: ${{vars.APP_CLIENT_ID}}
+          private-key: ${{secrets.APP_PRIVATE_KEY}}
+          repositories: Website
+          permission-contents: write
+
+      - name: Clone Website
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          repository: ImageMagick/Website
+          token: ${{steps.app-token.outputs.token}}
+
+      - name: Download ChangeLog.md
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
+        with:
+          name: ChangeLog
+
+      - name: Move ChangeLog.md
+        run: |
+          mv ChangeLog.md docs/changelog/index.md
+
+      - name: Configure git
+        run: |
+          git config --global user.name '${{steps.app-token.outputs.app-slug}}[bot]'
+          git config --global user.email '${{vars.APP_USER_ID}}+${{steps.app-token.outputs.app-slug}}[bot]@users.noreply.github.com'
+
+      - name: Update website version
+        env:
+          VERSION: ${{needs.version.outputs.version}}
+        run: |
+          ./update-version.sh "$VERSION" "$(date -u +"%Y-%m-%d")"
+
+      - name: Commit and push changes
+        env:
+          VERSION: ${{needs.version.outputs.version}}
+        run: |
+          git add -A
+          git commit -m "Update version to $VERSION"
+          git push

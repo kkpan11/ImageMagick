@@ -16,7 +16,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -42,7 +42,14 @@
 #include "MagickCore/list.h"
 #include "MagickCore/module.h"
 #include "MagickCore/option.h"
+#include "MagickCore/profile.h"
 #include "MagickCore/profile-private.h"
+#include "MagickCore/resize.h"
+#include "MagickCore/shear.h"
+#include "MagickCore/static.h"
+#include "MagickCore/string_.h"
+#include "MagickCore/string-private.h"
+#include "MagickCore/transform.h"
 #if defined(MAGICKCORE_UHDR_DELEGATE)
 #include "ultrahdr_api.h"
 #include "uhdr.h"
@@ -138,6 +145,20 @@ static uhdr_color_transfer_t map_ct_to_uhdr_ct(const char *input_ct)
 static Image *ReadUHDRImage(const ImageInfo *image_info,
   ExceptionInfo *exception)
 {
+#define SetHDRGMProperty(name,value) \
+  (void) FormatLocaleString(buffer,sizeof(buffer),"%.9g",(double) (value)); \
+  (void) SetImageProperty(image,"hdrgm:" name,buffer,exception)
+#define SetHDRGMPropertyInt(name,value) \
+  (void) FormatLocaleString(buffer,sizeof(buffer),"%d",(value)); \
+  (void) SetImageProperty(image,"hdrgm:" name,buffer,exception)
+#define SetHDRGMPropertySize(name,value) \
+  (void) FormatLocaleString(buffer,sizeof(buffer),"%.17g",(double) (value)); \
+  (void) SetImageProperty(image,"hdrgm:" name,buffer,exception)
+#define SetHDRGMProperty3(name,value,value1,value2) \
+  (void) FormatLocaleString(buffer,sizeof(buffer),"%.9g,%.9g,%.9g", \
+     (double) (value),(double) (value1),(double) (value2)); \
+  (void) SetImageProperty(image,"hdrgm:" name,buffer,exception)
+  
   Image
     *image;
 
@@ -162,12 +183,26 @@ static Image *ReadUHDRImage(const ImageInfo *image_info,
   uhdr_codec_private_t
     *handle = uhdr_create_decoder();
 
-  const char *option = GetImageOption(image_info, "uhdr:output-transfer-function");
+  const char *option = GetImageOption(image_info, "uhdr:output-color-transfer");
   uhdr_color_transfer_t decoded_img_ct =
-      (option != (const char *)NULL) ? map_ct_to_uhdr_ct(option) : UHDR_CT_UNSPECIFIED;
+      (option != (const char *)NULL) ? map_ct_to_uhdr_ct(option) : UHDR_CT_SRGB;
+
+  const char *profile_skip = GetImageOption(image_info, "profile:skip");
+
+  MagickBooleanType
+    skip_app_profiles = IsOptionMember("APP",profile_skip),
+    skip_exif_profile = IsOptionMember("EXIF",profile_skip),
+    skip_gainmap_profile = IsOptionMember("HDRGM",profile_skip),
+    skip_icc_profile = IsOptionMember("ICC",profile_skip);
+
+  if (skip_app_profiles != MagickFalse)
+    {
+      skip_exif_profile=MagickTrue;
+      skip_gainmap_profile=MagickTrue;
+    }
 
   uhdr_img_fmt_t
-    decoded_img_fmt;
+    decoded_img_fmt = UHDR_CT_SRGB;
 
   if (decoded_img_ct == UHDR_CT_LINEAR)
     decoded_img_fmt = UHDR_IMG_FMT_64bppRGBAHalfFloat;
@@ -193,52 +228,134 @@ static Image *ReadUHDRImage(const ImageInfo *image_info,
   }
 
   CHECK_IF_ERR(uhdr_dec_set_image(handle, &img))
-  CHECK_IF_ERR(uhdr_dec_set_out_img_format(handle, decoded_img_fmt));
   CHECK_IF_ERR(uhdr_dec_set_out_color_transfer(handle, decoded_img_ct))
+  CHECK_IF_ERR(uhdr_dec_set_out_img_format(handle, decoded_img_fmt))
   CHECK_IF_ERR(uhdr_dec_probe(handle))
 
   image->columns = uhdr_dec_get_image_width(handle);
   image->rows = uhdr_dec_get_image_height(handle);
 
   if (image_info->ping != MagickFalse)
-  {
-    uhdr_release_decoder(handle);
-    status = CloseBlob(image);
-    if (status == MagickFalse)
-      return (DestroyImageList(image));
-    return (GetFirstImageInList(image));
-  }
+    {
+      uhdr_release_decoder(handle);
+      (void) CloseBlob(image);
+      return(GetFirstImageInList(image));
+    }
+
+  status=SetImageExtent(image,image->columns,image->rows,exception);
+  if (status == MagickFalse)
+    {
+      uhdr_release_decoder(handle);
+      CloseBlob(image);
+      return(DestroyImageList(image));
+    }
 
   CHECK_IF_ERR(uhdr_decode(handle))
 
   uhdr_raw_image_t
     *dst = uhdr_get_decoded_image(handle);
 
-  status = SetImageExtent(image, image->columns, image->rows, exception);
-  if (status == MagickFalse)
+  /*
+    Preserve compressed gain‑map + metadata for transcoding.
+  */
   {
-    uhdr_release_decoder(handle);
-    CloseBlob(image);
-    return (DestroyImageList(image));
+    uhdr_mem_block_t
+      *gainmap_image = uhdr_dec_get_gainmap_image(handle);
+  
+    uhdr_gainmap_metadata_t
+      *gainmap_info = uhdr_dec_get_gainmap_metadata(handle);
+  
+    if ((skip_gainmap_profile == MagickFalse) &&
+        (gainmap_image != (uhdr_mem_block_t *) NULL) &&
+        (gainmap_info != (uhdr_gainmap_metadata_t *) NULL))
+    {
+      char
+        buffer[MagickPathExtent];
+
+      /*
+        Set gainmap as a binary profile.
+      */
+      StringInfo *gainmap_profile = BlobToProfileStringInfo("hdrgm",
+        gainmap_image->data,gainmap_image->data_sz,exception);
+      (void) SetImageProfilePrivate(image,gainmap_profile,exception);
+  
+      /*
+        Set metadata as properties.
+      */
+      SetHDRGMProperty3("GainMapMax",
+        gainmap_info->max_content_boost[0],gainmap_info->max_content_boost[1],
+        gainmap_info->max_content_boost[2]);
+      SetHDRGMProperty3("GainMapMin",
+        gainmap_info->min_content_boost[0],gainmap_info->min_content_boost[1],
+        gainmap_info->min_content_boost[2]);
+      SetHDRGMProperty3("Gamma",gainmap_info->gamma[0],
+        gainmap_info->gamma[1],gainmap_info->gamma[2]);
+      SetHDRGMProperty3("OffsetSDR",gainmap_info->offset_sdr[0],
+        gainmap_info->offset_sdr[1],gainmap_info->offset_sdr[2]);
+      SetHDRGMProperty3("OffsetHDR",gainmap_info->offset_hdr[0],
+        gainmap_info->offset_hdr[1],gainmap_info->offset_hdr[2]);
+      SetHDRGMProperty("HDRCapacityMin",gainmap_info->hdr_capacity_min);
+      SetHDRGMProperty("HDRCapacityMax",gainmap_info->hdr_capacity_max);
+      SetHDRGMPropertyInt("UseBaseColorGrade",gainmap_info->use_base_cg);
+      SetHDRGMPropertySize("BaseWidth",image->columns);
+      SetHDRGMPropertySize("BaseHeight",image->rows);
+    }
   }
 
 #undef CHECK_IF_ERR
 
   uhdr_mem_block_t *exif = uhdr_dec_get_exif(handle);
-  if (exif != NULL)
+  if ((skip_exif_profile == MagickFalse) && (exif != NULL))
   {
     StringInfo *exif_data = BlobToProfileStringInfo("exif",exif->data,
       exif->data_sz,exception);
     (void) SetImageProfilePrivate(image,exif_data,exception);
   }
 
-  SetImageColorspace(image, RGBColorspace, exception);
+  uhdr_mem_block_t *icc = uhdr_dec_get_icc(handle);
+  if ((skip_icc_profile == MagickFalse) && (icc != NULL) &&
+      (icc->data != NULL) && (icc->data_sz != 0))
+  {
+    const unsigned char
+      *icc_data_start = (const unsigned char *) icc->data;
+
+    size_t
+      icc_data_size = icc->data_sz;
+
+    /*
+      libultrahdr returns JPEG APP2 ICC chunk data. ImageMagick stores the
+      raw ICC payload and adds the APP2 wrapper itself when writing JPEG.
+    */
+    if ((icc_data_size > 14) &&
+        (memcmp(icc_data_start,"ICC_PROFILE\0",12) == 0))
+      {
+        icc_data_start+=14;
+        icc_data_size-=14;
+      }
+    StringInfo *icc_data = BlobToProfileStringInfo("icc",icc_data_start,
+      icc_data_size,exception);
+    (void) SetImageProfilePrivate(image,icc_data,exception);
+  }
 
   if (decoded_img_ct == UHDR_CT_LINEAR)
-    image->gamma = 1.0;
+    {
+      SetImageColorspace(image,RGBColorspace,exception);
+      image->gamma=1.0;
+    }
+  else if ((decoded_img_ct == UHDR_CT_SRGB) && (dst->cg == UHDR_CG_DISPLAY_P3))
+    SetImageColorspace(image,DisplayP3Colorspace,exception);
+  else if (decoded_img_ct == UHDR_CT_SRGB)
+    SetImageColorspace(image,sRGBColorspace,exception);
+  else
+    SetImageColorspace(image,RGBColorspace,exception);
 
   image->compression = JPEGCompression;
-  image->depth = (decoded_img_fmt == UHDR_IMG_FMT_32bppRGBA8888) ? 8 : 10;
+  if (decoded_img_fmt == UHDR_IMG_FMT_32bppRGBA8888)
+    image->depth = 8;
+  else if (decoded_img_fmt == UHDR_IMG_FMT_32bppRGBA1010102)
+    image->depth = 10;
+  else if (decoded_img_fmt == UHDR_IMG_FMT_64bppRGBAHalfFloat)
+    image->depth = 16;
   switch (dst->cg)
   {
   case UHDR_CG_BT_709:
@@ -380,6 +497,7 @@ ModuleExport size_t RegisterUHDRImage(void)
   entry->decoder=(DecodeImageHandler *) ReadUHDRImage;
   entry->encoder=(EncodeImageHandler *) WriteUHDRImage;
 #endif
+  entry->flags|=CoderDecoderSeekableStreamFlag;
   entry->magick=(IsImageFormatHandler *) IsUHDR;
   if (*version != '\0')
     entry->version=ConstantString(version);
@@ -506,7 +624,7 @@ static uhdr_mem_block_t GetExifProfile(Image *image, ExceptionInfo *exception)
     *profile;
 
   uhdr_mem_block_t
-    uhdr_profile = {};
+    uhdr_profile = { 0 };
 
   ResetImageProfileIterator(image);
   for (name = GetNextImageProfile(image); name != (const char *)NULL;)
@@ -524,7 +642,7 @@ static uhdr_mem_block_t GetExifProfile(Image *image, ExceptionInfo *exception)
       return uhdr_profile;
     }
     if (image->debug != MagickFalse)
-      (void)LogMagickEvent(CoderEvent, GetMagickModule(), "%s profile: %.20g bytes", name,
+      (void)LogMagickEvent(CoderEvent, GetMagickModule(), "%s profile: %.17g bytes", name,
                            (double)GetStringInfoLength(profile));
     name = GetNextImageProfile(image);
   }
@@ -532,7 +650,7 @@ static uhdr_mem_block_t GetExifProfile(Image *image, ExceptionInfo *exception)
 }
 
 static void fillRawImageDescriptor(uhdr_raw_image_t *imgDescriptor, const ImageInfo *image_info,
-                                   Image *image, uhdr_img_fmt_t fmt)
+                                   Image *image, uhdr_img_fmt_t fmt, uhdr_color_transfer_t ct)
 {
   const char
     *option;
@@ -544,28 +662,958 @@ static void fillRawImageDescriptor(uhdr_raw_image_t *imgDescriptor, const ImageI
     option = GetImageOption(image_info, "uhdr:hdr-color-gamut");
     imgDescriptor->cg = (option != (const char *)NULL) ? map_cg_to_uhdr_cg(option)
                                                        : getImageColorGamut(&image->chromaticity);
-
-    option = GetImageOption(image_info, "uhdr:hdr-color-transfer");
-    imgDescriptor->ct =
-        (option != (const char *)NULL) ? map_ct_to_uhdr_ct(option) : UHDR_CT_UNSPECIFIED;
   }
   else if (image->depth == 8)
   {
     option = GetImageOption(image_info, "uhdr:sdr-color-gamut");
     imgDescriptor->cg = (option != (const char *)NULL) ? map_cg_to_uhdr_cg(option)
                                                        : getImageColorGamut(&image->chromaticity);
-
-    imgDescriptor->ct = UHDR_CT_SRGB;
   }
 
-  imgDescriptor->range = UHDR_CR_UNSPECIFIED;
+  imgDescriptor->range = imgDescriptor->fmt == UHDR_IMG_FMT_24bppYCbCrP010 ? UHDR_CR_LIMITED_RANGE
+                                                                           : UHDR_CR_FULL_RANGE;
+  imgDescriptor->ct = ct;
   imgDescriptor->w = image->columns;
   imgDescriptor->h = image->rows;
+}
+
+static size_t GetHDRGMPropertySize(const Image *image,const char *name,
+  ExceptionInfo *exception)
+{
+  char
+    property[MagickPathExtent];
+
+  const char
+    *value;
+
+  (void) FormatLocaleString(property,MagickPathExtent,"hdrgm:%s",name);
+  value=GetImageProperty(image,property,exception);
+  if (value == (const char *) NULL)
+    return(0);
+  return((size_t) StringToUnsignedLong(value));
+}
+
+static size_t ScaleGainMapExtent(const size_t extent,
+  const size_t scaled_extent,const size_t base_extent)
+{
+  double
+    scale;
+
+  if ((extent == 0) || (scaled_extent == 0) || (base_extent == 0))
+    return(0);
+  scale=((double) extent*(double) scaled_extent)/(double) base_extent;
+  if (scale < 1.0)
+    return(1);
+  if (scale > (double) MAGICK_SSIZE_MAX)
+    return(0);
+  return(CastDoubleToSizeT(scale+0.5));
+}
+
+static ssize_t ScaleGainMapCoordinate(const double coordinate,
+  const size_t extent,const size_t base_extent)
+{
+  double
+    scale;
+
+  if ((extent == 0) || (base_extent == 0))
+    return(0);
+  scale=((double) extent*coordinate)/(double) base_extent;
+  if (scale < 0.0)
+    return(0);
+  if (scale > (double) MAGICK_SSIZE_MAX)
+    return(MAGICK_SSIZE_MAX);
+  return(CastDoubleToSsizeT(floor(scale+0.5)));
+}
+
+static MagickBooleanType IsGainMapBaseGeometry(const size_t base_columns,
+  const size_t base_rows,const double columns,const double rows)
+{
+  if ((columns <= 0.0) || (rows <= 0.0))
+    return(MagickFalse);
+  if ((base_columns != CastDoubleToSizeT(columns)) ||
+      (base_rows != CastDoubleToSizeT(rows)))
+    return(MagickFalse);
+  return(MagickTrue);
+}
+
+typedef struct _UltraHDRGainMapTransformState
+{
+  size_t
+    columns,
+    rows,
+    source_columns,
+    source_rows;
+
+  ssize_t
+    origin_x,
+    origin_y;
+
+  int
+    basis_x_x,
+    basis_x_y,
+    basis_y_x,
+    basis_y_y;
+} UltraHDRGainMapTransformState;
+
+typedef struct _UltraHDRGainMapOrientation
+{
+  int
+    origin_columns,
+    origin_rows,
+    basis_x_columns,
+    basis_x_rows,
+    basis_y_columns,
+    basis_y_rows,
+    swaps;
+} UltraHDRGainMapOrientation;
+
+static const UltraHDRGainMapOrientation
+  gainmap_orientations[7] =
+  {
+    { 0, 1, 0,-1, 1, 0, 1 }, /* rotate 90 degrees clockwise */
+    { 1, 1,-1, 0, 0,-1, 0 }, /* rotate 180 degrees */
+    { 1, 0, 0, 1,-1, 0, 1 }, /* rotate 270 degrees clockwise */
+    { 0, 1, 1, 0, 0,-1, 0 }, /* flip */
+    { 1, 0,-1, 0, 0, 1, 0 }, /* flop */
+    { 0, 0, 0, 1, 1, 0, 1 }, /* transpose */
+    { 1, 1, 0,-1,-1, 0, 1 }  /* transverse */
+  };
+
+static void InitializeGainMapTransformState(
+  UltraHDRGainMapTransformState *state,const size_t columns,
+  const size_t rows)
+{
+  state->columns=columns;
+  state->rows=rows;
+  state->source_columns=columns;
+  state->source_rows=rows;
+  state->origin_x=0;
+  state->origin_y=0;
+  state->basis_x_x=1;
+  state->basis_x_y=0;
+  state->basis_y_x=0;
+  state->basis_y_y=1;
+}
+
+static MagickBooleanType AddGainMapTransformOffset(const ssize_t origin,
+  const size_t offset,const int direction,ssize_t *result)
+{
+  if (offset > (size_t) MAGICK_SSIZE_MAX)
+    return(MagickFalse);
+  if (direction == 0)
+    {
+      *result=origin;
+      return(MagickTrue);
+    }
+  if (direction > 0)
+    {
+      if (origin > (MAGICK_SSIZE_MAX-(ssize_t) offset))
+        return(MagickFalse);
+      *result=origin+(ssize_t) offset;
+    }
+  else
+    {
+      if (origin < (MAGICK_SSIZE_MIN+(ssize_t) offset))
+        return(MagickFalse);
+      *result=origin-(ssize_t) offset;
+    }
+  return(MagickTrue);
+}
+
+static MagickBooleanType AddGainMapTransformTerm(const ssize_t origin,
+  const size_t x,const int x_direction,const size_t y,const int y_direction,
+  ssize_t *result)
+{
+  ssize_t
+    value;
+
+  if (AddGainMapTransformOffset(origin,x,x_direction,&value) == MagickFalse)
+    return(MagickFalse);
+  return(AddGainMapTransformOffset(value,y,y_direction,result));
+}
+
+static MagickBooleanType UpdateGainMapTransformCrop(
+  UltraHDRGainMapTransformState *state,const size_t columns,
+  const size_t rows,const ssize_t x,const ssize_t y)
+{
+  ssize_t
+    origin_x,
+    origin_y;
+
+  if ((columns == 0) || (rows == 0) || (columns > state->columns) ||
+      (rows > state->rows) || (x < 0) || (y < 0) ||
+      ((size_t) x > state->columns-columns) ||
+      ((size_t) y > state->rows-rows))
+    return(MagickFalse);
+  if (AddGainMapTransformTerm(state->origin_x,(size_t) x,
+      state->basis_x_x,(size_t) y,state->basis_y_x,&origin_x) == MagickFalse)
+    return(MagickFalse);
+  if (AddGainMapTransformTerm(state->origin_y,(size_t) x,
+      state->basis_x_y,(size_t) y,state->basis_y_y,&origin_y) == MagickFalse)
+    return(MagickFalse);
+  state->origin_x=origin_x;
+  state->origin_y=origin_y;
+  state->columns=columns;
+  state->rows=rows;
+  return(MagickTrue);
+}
+
+static MagickBooleanType UpdateGainMapTransformOrientation(
+  UltraHDRGainMapTransformState *state,const size_t orientation)
+{
+  const UltraHDRGainMapOrientation
+    *transform;
+
+  ssize_t
+    origin_x,
+    origin_y;
+
+  int
+    basis_x_x,
+    basis_x_y,
+    basis_y_x,
+    basis_y_y;
+
+  size_t
+    columns,
+    rows;
+
+  if (orientation >= (sizeof(gainmap_orientations)/
+      sizeof(*gainmap_orientations)))
+    return(MagickFalse);
+  transform=gainmap_orientations+orientation;
+  columns=state->columns;
+  rows=state->rows;
+  if (AddGainMapTransformTerm(state->origin_x,
+      transform->origin_columns > 0 ? columns : 0,
+      transform->origin_columns*state->basis_x_x,
+      transform->origin_rows > 0 ? rows : 0,
+      transform->origin_rows*state->basis_y_x,
+      &origin_x) == MagickFalse ||
+      AddGainMapTransformTerm(state->origin_y,
+      transform->origin_columns > 0 ? columns : 0,
+      transform->origin_columns*state->basis_x_y,
+      transform->origin_rows > 0 ? rows : 0,
+      transform->origin_rows*state->basis_y_y,
+      &origin_y) == MagickFalse)
+    return(MagickFalse);
+  basis_x_x=transform->basis_x_columns*state->basis_x_x+
+    transform->basis_x_rows*state->basis_y_x;
+  basis_x_y=transform->basis_x_columns*state->basis_x_y+
+    transform->basis_x_rows*state->basis_y_y;
+  basis_y_x=transform->basis_y_columns*state->basis_x_x+
+    transform->basis_y_rows*state->basis_y_x;
+  basis_y_y=transform->basis_y_columns*state->basis_x_y+
+    transform->basis_y_rows*state->basis_y_y;
+  if (transform->swaps != 0)
+    Swap(columns,rows);
+  state->origin_x=origin_x;
+  state->origin_y=origin_y;
+  state->basis_x_x=basis_x_x;
+  state->basis_x_y=basis_x_y;
+  state->basis_y_x=basis_y_x;
+  state->basis_y_y=basis_y_y;
+  state->columns=columns;
+  state->rows=rows;
+  return(MagickTrue);
+}
+
+static MagickBooleanType UpdateGainMapTransformStateFromRecord(
+  UltraHDRGainMapTransformState *state,const char *transform)
+{
+  const char
+    *geometry;
+
+  double
+    rotations,
+    source_columns,
+    source_rows;
+
+  size_t
+    orientation;
+
+  int
+    fields;
+
+  if (LocaleNCompare(transform,"rotate ",7) == 0)
+    {
+      geometry=transform+7;
+      fields=sscanf(geometry,"%lfx%lf %lf",&source_columns,
+        &source_rows,&rotations);
+      if (fields != 3)
+        return(MagickFalse);
+      if ((IsNaN(source_columns) != 0) ||
+          (IsNaN(source_rows) != 0) || (IsNaN(rotations) != 0) ||
+          (source_columns > (double) MAGICK_SSIZE_MAX) ||
+          (source_rows > (double) MAGICK_SSIZE_MAX) ||
+          (rotations < 0.0) || (rotations > (double) MAGICK_SSIZE_MAX) ||
+          (rotations != floor(rotations)) ||
+          (IsGainMapBaseGeometry(state->columns,state->rows,source_columns,
+            source_rows) == MagickFalse))
+        return(MagickFalse);
+      orientation=CastDoubleToSizeT(rotations)%4;
+      if (orientation == 0)
+        return(MagickTrue);
+      return(UpdateGainMapTransformOrientation(state,orientation-1));
+    }
+  if (LocaleNCompare(transform,"flip ",5) == 0)
+    orientation=3;
+  else if (LocaleNCompare(transform,"flop ",5) == 0)
+    orientation=4;
+  else if (LocaleNCompare(transform,"transpose ",10) == 0)
+    orientation=5;
+  else if (LocaleNCompare(transform,"transverse ",11) == 0)
+    orientation=6;
+  else
+    return(MagickFalse);
+  geometry=transform+(orientation < 5 ? 5 : orientation == 5 ? 10 : 11);
+  fields=sscanf(geometry,"%lfx%lf",&source_columns,&source_rows);
+  if (fields != 2)
+    return(MagickFalse);
+  if ((IsNaN(source_columns) != 0) || (IsNaN(source_rows) != 0) ||
+      (source_columns > (double) MAGICK_SSIZE_MAX) ||
+      (source_rows > (double) MAGICK_SSIZE_MAX) ||
+      (IsGainMapBaseGeometry(state->columns,state->rows,source_columns,
+        source_rows) == MagickFalse))
+    return(MagickFalse);
+  return(UpdateGainMapTransformOrientation(state,orientation));
+}
+
+static MagickBooleanType ReplaceGainMapImage(Image **gainmap_image,
+  Image *transform_image)
+{
+  if (transform_image == (Image *) NULL)
+    return(MagickFalse);
+  *gainmap_image=DestroyImageList(*gainmap_image);
+  *gainmap_image=transform_image;
+  return(MagickTrue);
+}
+
+static MagickBooleanType CropGainMapImage(Image **gainmap_image,
+  const size_t base_columns,const size_t base_rows,const double columns,
+  const double rows,const double x,const double y,ExceptionInfo *exception)
+{
+  Image
+    *crop_image;
+
+  RectangleInfo
+    geometry;
+
+  ssize_t
+    x0,
+    x1,
+    y0,
+    y1;
+
+  if ((base_columns == 0) || (base_rows == 0) || (columns <= 0.0) ||
+      (rows <= 0.0))
+    return(MagickFalse);
+  if ((x < 0.0) || (y < 0.0) || ((x+columns) > (double) base_columns) ||
+      ((y+rows) > (double) base_rows))
+    return(MagickFalse);
+  x0=ScaleGainMapCoordinate(x,(*gainmap_image)->columns,base_columns);
+  y0=ScaleGainMapCoordinate(y,(*gainmap_image)->rows,base_rows);
+  x1=ScaleGainMapCoordinate(x+columns,(*gainmap_image)->columns,base_columns);
+  y1=ScaleGainMapCoordinate(y+rows,(*gainmap_image)->rows,base_rows);
+  if (x0 >= (ssize_t) (*gainmap_image)->columns)
+    x0=(ssize_t) (*gainmap_image)->columns-1;
+  if (y0 >= (ssize_t) (*gainmap_image)->rows)
+    y0=(ssize_t) (*gainmap_image)->rows-1;
+  if (x1 > (ssize_t) (*gainmap_image)->columns)
+    x1=(ssize_t) (*gainmap_image)->columns;
+  if (y1 > (ssize_t) (*gainmap_image)->rows)
+    y1=(ssize_t) (*gainmap_image)->rows;
+  if (x1 <= x0)
+    x1=x0+1;
+  if (y1 <= y0)
+    y1=y0+1;
+  geometry.x=x0;
+  geometry.y=y0;
+  geometry.width=(size_t) (x1-x0);
+  geometry.height=(size_t) (y1-y0);
+  (void) ResetImagePage(*gainmap_image,"0x0+0+0");
+  crop_image=CropImage(*gainmap_image,&geometry,exception);
+  return(ReplaceGainMapImage(gainmap_image,crop_image));
+}
+
+static MagickBooleanType ResizeGainMapImage(Image **gainmap_image,
+  size_t *base_columns,size_t *base_rows,const size_t columns,
+  const size_t rows,const FilterType filter_type,ExceptionInfo *exception)
+{
+  Image
+    *resize_image;
+
+  size_t
+    target_columns,
+    target_rows;
+
+  target_columns=ScaleGainMapExtent((*gainmap_image)->columns,columns,
+    *base_columns);
+  target_rows=ScaleGainMapExtent((*gainmap_image)->rows,rows,*base_rows);
+  if ((target_columns == 0) || (target_rows == 0))
+    return(MagickFalse);
+  if ((target_columns != (*gainmap_image)->columns) ||
+      (target_rows != (*gainmap_image)->rows))
+    {
+      resize_image=ResizeImage(*gainmap_image,target_columns,target_rows,
+        filter_type,exception);
+      if (ReplaceGainMapImage(gainmap_image,resize_image) == MagickFalse)
+        return(MagickFalse);
+    }
+  *base_columns=columns;
+  *base_rows=rows;
+  return(MagickTrue);
+}
+
+static MagickBooleanType ApplyGainMapTransform(Image **gainmap_image,
+  size_t *base_columns,size_t *base_rows,const Image *image,
+  const char *transform,ExceptionInfo *exception)
+{
+  double
+    columns,
+    rows,
+    source_columns,
+    source_rows;
+
+  FilterType
+    filter_type;
+
+  int
+    fields,
+    filter_value;
+
+  if (LocaleNCompare(transform,"resize ",7) == 0)
+    {
+      fields=sscanf(transform+7,"%lfx%lf %lfx%lf %d",&source_columns,
+        &source_rows,&columns,&rows,&filter_value);
+      if ((fields != 4) && (fields != 5))
+        return(MagickFalse);
+      if ((IsNaN(source_columns) != 0) || (IsNaN(source_rows) != 0) ||
+          (IsNaN(columns) != 0) || (IsNaN(rows) != 0) ||
+          (source_columns > (double) MAGICK_SSIZE_MAX) ||
+          (source_rows > (double) MAGICK_SSIZE_MAX) ||
+          (columns <= 0.0) || (rows <= 0.0) ||
+          (columns > (double) MAGICK_SSIZE_MAX) ||
+          (rows > (double) MAGICK_SSIZE_MAX) ||
+          (columns != floor(columns)) || (rows != floor(rows)))
+        return(MagickFalse);
+      filter_type=UndefinedFilter;
+      if (fields == 5)
+        {
+          if ((filter_value <= (int) UndefinedFilter) ||
+              (filter_value >= (int) SentinelFilter))
+            return(MagickFalse);
+          filter_type=(FilterType) filter_value;
+        }
+      else
+        filter_type=image->filter;
+      if (IsGainMapBaseGeometry(*base_columns,*base_rows,source_columns,
+          source_rows) == MagickFalse)
+        return(MagickFalse);
+      return(ResizeGainMapImage(gainmap_image,base_columns,base_rows,
+        CastDoubleToSizeT(columns),CastDoubleToSizeT(rows),filter_type,
+        exception));
+    }
+  return(MagickFalse);
+}
+
+static MagickBooleanType ApplyGainMapTransformOrientation(
+  Image **gainmap_image,const UltraHDRGainMapTransformState *state,
+  ExceptionInfo *exception)
+{
+  Image
+    *transform_image;
+
+  size_t
+    orientation,
+    rotations;
+
+  if ((state->basis_x_x == 1) && (state->basis_x_y == 0) &&
+      (state->basis_y_x == 0) && (state->basis_y_y == 1))
+    return(MagickTrue);
+  for (orientation=0; orientation < (sizeof(gainmap_orientations)/
+      sizeof(*gainmap_orientations)); orientation++)
+    if ((state->basis_x_x == gainmap_orientations[orientation].basis_x_columns) &&
+        (state->basis_x_y == gainmap_orientations[orientation].basis_x_rows) &&
+        (state->basis_y_x == gainmap_orientations[orientation].basis_y_columns) &&
+        (state->basis_y_y == gainmap_orientations[orientation].basis_y_rows))
+      break;
+  if (orientation >= (sizeof(gainmap_orientations)/
+      sizeof(*gainmap_orientations)))
+    return(MagickFalse);
+  if (orientation < 3)
+    rotations=orientation+1;
+  else if (orientation == 3)
+    transform_image=FlipImage(*gainmap_image,exception);
+  else if (orientation == 4)
+    transform_image=FlopImage(*gainmap_image,exception);
+  else if (orientation == 5)
+    transform_image=TransposeImage(*gainmap_image,exception);
+  else
+    transform_image=TransverseImage(*gainmap_image,exception);
+  if (orientation >= 3)
+    return(ReplaceGainMapImage(gainmap_image,transform_image));
+  transform_image=IntegralRotateImage(*gainmap_image,rotations,exception);
+  return(ReplaceGainMapImage(gainmap_image,transform_image));
+}
+
+static MagickBooleanType FlushGainMapTransform(
+  Image **gainmap_image,const UltraHDRGainMapTransformState *state,
+  ExceptionInfo *exception)
+{
+  ssize_t
+    origin_x,
+    origin_y,
+    max_x,
+    max_y,
+    min_x,
+    min_y,
+    opposite_x,
+    opposite_y;
+
+  size_t
+    crop_height,
+    crop_width;
+
+  if ((state->source_columns == 0) || (state->source_rows == 0) ||
+      (state->source_columns > (size_t) MAGICK_SSIZE_MAX) ||
+      (state->source_rows > (size_t) MAGICK_SSIZE_MAX))
+    return(MagickFalse);
+  origin_x=state->origin_x;
+  origin_y=state->origin_y;
+  if (AddGainMapTransformTerm(state->origin_x,state->columns,
+      state->basis_x_x,state->rows,state->basis_y_x,&opposite_x) ==
+      MagickFalse ||
+      AddGainMapTransformTerm(state->origin_y,state->columns,
+      state->basis_x_y,state->rows,state->basis_y_y,&opposite_y) ==
+      MagickFalse)
+    return(MagickFalse);
+  min_x=MagickMin(origin_x,opposite_x);
+  min_y=MagickMin(origin_y,opposite_y);
+  max_x=MagickMax(origin_x,opposite_x);
+  max_y=MagickMax(origin_y,opposite_y);
+  if ((min_x < 0) || (min_y < 0) ||
+      (max_x > (ssize_t) state->source_columns) ||
+      (max_y > (ssize_t) state->source_rows) || (max_x <= min_x) ||
+      (max_y <= min_y))
+    return(MagickFalse);
+  crop_width=(size_t) (max_x-min_x);
+  crop_height=(size_t) (max_y-min_y);
+  if ((min_x != 0) || (min_y != 0) ||
+      (max_x != (ssize_t) state->source_columns) ||
+      (max_y != (ssize_t) state->source_rows))
+    if (CropGainMapImage(gainmap_image,state->source_columns,
+        state->source_rows,(double) crop_width,(double) crop_height,
+        (double) min_x,(double) min_y,exception) == MagickFalse)
+      return(MagickFalse);
+  if (ApplyGainMapTransformOrientation(gainmap_image,state,exception) ==
+      MagickFalse)
+    return(MagickFalse);
+  return(MagickTrue);
+}
+
+static StringInfo *EncodeBaseImageProfile(const ImageInfo *image_info,
+  Image *image,ExceptionInfo *exception)
+{
+  Image
+    *base_image;
+
+  ImageInfo
+    *base_info;
+
+  size_t
+    length;
+
+  StringInfo
+    *profile,
+    *removed_profile;
+
+  void
+    *blob;
+
+  base_image=CloneImage(image,0,0,MagickTrue,exception);
+  if (base_image == (Image *) NULL)
+    return((StringInfo *) NULL);
+  removed_profile=RemoveImageProfile(base_image,"hdrgm");
+  if (removed_profile != (StringInfo *) NULL)
+    removed_profile=DestroyStringInfo(removed_profile);
+  base_info=CloneImageInfo(image_info);
+  (void) CopyMagickString(base_info->filename,"JPEG:uhdr-base.jpg",
+    MagickPathExtent);
+  (void) CopyMagickString(base_info->magick,"JPEG",MagickPathExtent);
+  base_info->type=TrueColorType;
+  if (image->quality > 0)
+    base_info->quality=image->quality;
+  (void) CopyMagickString(base_image->magick,"JPEG",MagickPathExtent);
+  blob=ImageToBlob(base_info,base_image,&length,exception);
+  base_image=DestroyImage(base_image);
+  base_info=DestroyImageInfo(base_info);
+  if (blob == (void *) NULL)
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),CoderError,
+        "UnableToEncodeBaseImage","`%s'",image->filename);
+      return((StringInfo *) NULL);
+    }
+  profile=BlobToProfileStringInfo("uhdr-base",blob,length,exception);
+  blob=RelinquishMagickMemory(blob);
+  return(profile);
+}
+
+static StringInfo *TransformGainMapProfile(const ImageInfo *image_info,
+  const Image *image,const StringInfo *gainmap_profile,
+  MagickBooleanType *transform_status,ExceptionInfo *exception)
+{
+  const char
+    *option,
+    *transforms;
+
+  Image
+    *gainmap_images;
+
+  ImageInfo
+    *gainmap_info;
+
+  MagickBooleanType
+    status,
+    transformed,
+    transform_required,
+    transform_pending;
+
+  UltraHDRGainMapTransformState
+    transform_state;
+
+  size_t
+    base_columns,
+    base_rows,
+    length;
+
+  StringInfo
+    *profile;
+
+  void
+    *blob;
+
+  assert(transform_status != (MagickBooleanType *) NULL);
+  *transform_status=MagickTrue;
+  base_columns=GetHDRGMPropertySize(image,"BaseWidth",exception);
+  base_rows=GetHDRGMPropertySize(image,"BaseHeight",exception);
+  transforms=GetImageProperty(image,"hdrgm:Transform",exception);
+  transform_required=((transforms != (const char *) NULL) &&
+    (*transforms != '\0')) ? MagickTrue : MagickFalse;
+  if ((base_columns == 0) || (base_rows == 0))
+    {
+      if (transform_required != MagickFalse)
+        {
+          *transform_status=MagickFalse;
+          (void) ThrowMagickException(exception,GetMagickModule(),CoderError,
+            "UnableToTransformGainMap","`%s'",image->filename);
+        }
+      return((StringInfo *) NULL);
+    }
+  if ((base_columns != image->columns) || (base_rows != image->rows))
+    {
+      if (transform_required == MagickFalse)
+        {
+          *transform_status=MagickFalse;
+          (void) ThrowMagickException(exception,GetMagickModule(),CoderError,
+            "UnableToTransformGainMap","`%s'",image->filename);
+          return((StringInfo *) NULL);
+        }
+    }
+  if (transform_required == MagickFalse)
+    return((StringInfo *) NULL);
+  gainmap_info=CloneImageInfo(image_info);
+  (void) CopyMagickString(gainmap_info->filename,"JPEG:hdrgm.jpg",
+    MagickPathExtent);
+  (void) CopyMagickString(gainmap_info->magick,"JPEG",MagickPathExtent);
+  (void) SetImageOption(gainmap_info,"jpeg:detect-uhdr","false");
+  gainmap_images=BlobToImage(gainmap_info,GetStringInfoDatum(gainmap_profile),
+    GetStringInfoLength(gainmap_profile),exception);
+  if (gainmap_images == (Image *) NULL)
+    {
+      gainmap_info=DestroyImageInfo(gainmap_info);
+      *transform_status=MagickFalse;
+      (void) ThrowMagickException(exception,GetMagickModule(),CoderError,
+        "UnableToDecodeGainMap","`%s'",image->filename);
+      return((StringInfo *) NULL);
+    }
+  status=MagickTrue;
+  transformed=MagickFalse;
+  transform_pending=MagickFalse;
+  InitializeGainMapTransformState(&transform_state,base_columns,base_rows);
+  if ((transforms != (const char *) NULL) && (*transforms != '\0'))
+    {
+      char
+        *next,
+        *transform,
+        *transform_list;
+
+      transform_list=AcquireString(transforms);
+      for (transform=transform_list; transform != (char *) NULL; )
+      {
+        next=strchr(transform,';');
+        if (next != (char *) NULL)
+          *next++='\0';
+        if (*transform != '\0')
+          {
+            if (LocaleNCompare(transform,"crop ",5) == 0)
+              {
+                double
+                  columns,
+                  rows,
+                  source_columns,
+                  source_rows,
+                  x,
+                  y;
+
+                size_t
+                  crop_columns,
+                  crop_rows;
+
+                ssize_t
+                  crop_x,
+                  crop_y;
+
+                if (sscanf(transform+5,"%lfx%lf %lfx%lf%lf%lf",
+                    &source_columns,&source_rows,&columns,&rows,&x,&y) != 6)
+                  status=MagickFalse;
+                else if ((IsNaN(source_columns) != 0) ||
+                    (IsNaN(source_rows) != 0) || (IsNaN(columns) != 0) ||
+                    (IsNaN(rows) != 0) || (IsNaN(x) != 0) ||
+                    (IsNaN(y) != 0) ||
+                    (source_columns > (double) MAGICK_SSIZE_MAX) ||
+                    (source_rows > (double) MAGICK_SSIZE_MAX) ||
+                    (columns > (double) MAGICK_SSIZE_MAX) ||
+                    (rows > (double) MAGICK_SSIZE_MAX) ||
+                    (x > (double) MAGICK_SSIZE_MAX) ||
+                    (y > (double) MAGICK_SSIZE_MAX) ||
+                    (columns != floor(columns)) ||
+                    (rows != floor(rows)) || (x != floor(x)) ||
+                    (y != floor(y)))
+                  status=MagickFalse;
+                else if (IsGainMapBaseGeometry(transform_state.columns,
+                    transform_state.rows,
+                    source_columns,source_rows) == MagickFalse)
+                  status=MagickFalse;
+                else if ((columns <= 0.0) || (rows <= 0.0) ||
+                    (x < 0.0) || (y < 0.0) ||
+                    (columns > (double) transform_state.columns) ||
+                    (rows > (double) transform_state.rows) ||
+                    (x > ((double) transform_state.columns-columns)) ||
+                    (y > ((double) transform_state.rows-rows)))
+                  status=MagickFalse;
+                if (status != MagickFalse)
+                  {
+                    crop_columns=CastDoubleToSizeT(columns);
+                    crop_rows=CastDoubleToSizeT(rows);
+                    crop_x=CastDoubleToSsizeT(x);
+                    crop_y=CastDoubleToSsizeT(y);
+                    if (transform_pending == MagickFalse)
+                      {
+                        InitializeGainMapTransformState(&transform_state,
+                          base_columns,base_rows);
+                        transform_pending=MagickTrue;
+                      }
+                    status=UpdateGainMapTransformCrop(&transform_state,
+                      crop_columns,crop_rows,crop_x,crop_y);
+                    if (status != MagickFalse)
+                      {
+                        base_columns=transform_state.columns;
+                        base_rows=transform_state.rows;
+                        transformed=MagickTrue;
+                      }
+                  }
+              }
+            else if (LocaleNCompare(transform,"resize ",7) == 0)
+              {
+                if (transform_pending != MagickFalse)
+                  {
+                    status=FlushGainMapTransform(&gainmap_images,
+                      &transform_state,exception);
+                    transform_pending=MagickFalse;
+                  }
+                if (status != MagickFalse)
+                  status=ApplyGainMapTransform(&gainmap_images,&base_columns,
+                    &base_rows,image,transform,exception);
+                if (status != MagickFalse)
+                  {
+                    InitializeGainMapTransformState(&transform_state,
+                      base_columns,base_rows);
+                    transformed=MagickTrue;
+                  }
+              }
+            else if ((LocaleNCompare(transform,"flip ",5) == 0) ||
+                (LocaleNCompare(transform,"flop ",5) == 0) ||
+                (LocaleNCompare(transform,"rotate ",7) == 0) ||
+                (LocaleNCompare(transform,"transpose ",10) == 0) ||
+                (LocaleNCompare(transform,"transverse ",11) == 0))
+              {
+                if (transform_pending == MagickFalse)
+                  {
+                    InitializeGainMapTransformState(&transform_state,
+                      base_columns,base_rows);
+                    transform_pending=MagickTrue;
+                  }
+                status=UpdateGainMapTransformStateFromRecord(
+                  &transform_state,transform);
+                if (status != MagickFalse)
+                  {
+                    base_columns=transform_state.columns;
+                    base_rows=transform_state.rows;
+                    transformed=MagickTrue;
+                  }
+              }
+            else
+              {
+                status=MagickFalse;
+              }
+            if (status == MagickFalse)
+              break;
+          }
+        transform=next;
+      }
+      transform_list=DestroyString(transform_list);
+    }
+  if ((status != MagickFalse) && (transform_pending != MagickFalse))
+    {
+      status=FlushGainMapTransform(&gainmap_images,&transform_state,exception);
+    }
+  if ((status != MagickFalse) &&
+      ((base_columns != image->columns) || (base_rows != image->rows)))
+    status=MagickFalse;
+  if (status == MagickFalse)
+    {
+      gainmap_info=DestroyImageInfo(gainmap_info);
+      gainmap_images=DestroyImageList(gainmap_images);
+      *transform_status=MagickFalse;
+      (void) ThrowMagickException(exception,GetMagickModule(),CoderError,
+        "UnableToTransformGainMap","`%s'",image->filename);
+      return((StringInfo *) NULL);
+    }
+  if (transformed == MagickFalse)
+    {
+      gainmap_images=DestroyImageList(gainmap_images);
+      gainmap_info=DestroyImageInfo(gainmap_info);
+      return((StringInfo *) NULL);
+    }
+  option=GetImageOption(image_info,"uhdr:gainmap-quality");
+  if (option != (const char *) NULL)
+    gainmap_images->quality=StringToUnsignedLong(option);
+  else if (image->quality > 0)
+    gainmap_images->quality=image->quality;
+  (void) CopyMagickString(gainmap_images->magick,"JPEG",MagickPathExtent);
+  blob=ImageToBlob(gainmap_info,gainmap_images,&length,exception);
+  gainmap_images=DestroyImageList(gainmap_images);
+  gainmap_info=DestroyImageInfo(gainmap_info);
+  if (blob == (void *) NULL)
+    {
+      *transform_status=MagickFalse;
+      (void) ThrowMagickException(exception,GetMagickModule(),CoderError,
+        "UnableToEncodeGainMap","`%s'",image->filename);
+      return((StringInfo *) NULL);
+    }
+  profile=BlobToProfileStringInfo("hdrgm",blob,length,exception);
+  blob=RelinquishMagickMemory(blob);
+  if (profile == (StringInfo *) NULL)
+    {
+      *transform_status=MagickFalse;
+      (void) ThrowMagickException(exception,GetMagickModule(),CoderError,
+        "UnableToEncodeGainMap","`%s'",image->filename);
+    }
+  return(profile);
+}
+
+static const char *SkipHDRGMWhitespace(const char *value)
+{
+  while ((*value != '\0') &&
+         (strchr(" \f\n\r\t\v",(int) ((unsigned char) *value)) !=
+          (char *) NULL))
+    value++;
+  return(value);
+}
+
+static MagickBooleanType ParseHDRGMProperty(const char *value,float *result)
+{
+  char
+    *q;
+
+  value=SkipHDRGMWhitespace(value);
+  *result=StringToFloat(value,&q);
+  if ((q == value) || (IsNaN((double) *result) != 0) ||
+      (*result > FLT_MAX) || (*result < -FLT_MAX))
+    return(MagickFalse);
+  q=(char *) SkipHDRGMWhitespace(q);
+  return(*q == '\0' ? MagickTrue : MagickFalse);
+}
+
+static MagickBooleanType ParseHDRGMProperty3(const char *value,
+  float values[3])
+{
+  char
+    *q;
+
+  ssize_t
+    i;
+
+  for (i=0; i < 3; i++)
+  {
+    value=SkipHDRGMWhitespace(value);
+    values[i]=StringToFloat(value,&q);
+    if ((q == value) || (IsNaN((double) values[i]) != 0) ||
+        (values[i] > FLT_MAX) || (values[i] < -FLT_MAX))
+      return(MagickFalse);
+    q=(char *) SkipHDRGMWhitespace(q);
+    if (i == 2)
+      return(*q == '\0' ? MagickTrue : MagickFalse);
+    if (*q != ',')
+      return(MagickFalse);
+    value=q+1;
+  }
+  return(MagickFalse);
 }
 
 static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
   Image *images,ExceptionInfo *exception)
 {
+#define GetHDRGMProperty(name,field) \
+  do { \
+    const char *v = GetImageProperty(image,"hdrgm:" name,exception); \
+    float value; \
+    if ((v != (const char *) NULL) && \
+        (ParseHDRGMProperty(v,&value) == MagickFalse)) \
+      { \
+        (void) ThrowMagickException(exception,GetMagickModule(),OptionError, \
+          "InvalidArgument","`hdrgm:%s'",name); \
+        status=MagickFalse; \
+      } \
+    else if (v != (const char *) NULL) \
+      gainmap_info.field=value; \
+  } while (0)
+#define GetHDRGMPropertyInt(name,field) \
+  do { \
+    const char *v = GetImageProperty(image,"hdrgm:" name,exception); \
+    if (v != (const char *) NULL) \
+      gainmap_info.field=atoi(v); \
+  } while (0)
+#define GetHDRGMProperty3(name,field0,field1,field2) \
+  do { \
+    const char *v = GetImageProperty(image,"hdrgm:" name,exception); \
+    float values[3]; \
+    if ((v != (const char *) NULL) && \
+        (ParseHDRGMProperty3(v,values) == MagickFalse)) \
+      { \
+        (void) ThrowMagickException(exception,GetMagickModule(),OptionError, \
+          "InvalidArgument","`hdrgm:%s'",name); \
+        status=MagickFalse; \
+      } \
+    else if (v != (const char *) NULL) \
+      { \
+        gainmap_info.field0=values[0]; \
+        gainmap_info.field1=values[1]; \
+        gainmap_info.field2=values[2]; \
+      } \
+  } while (0)
+
   Image
     *image = images;
 
@@ -573,11 +1621,27 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
     status = MagickTrue;
 
   uhdr_raw_image_t
-    hdrImgDescriptor = {0},
-    sdrImgDescriptor = {0};
+    hdrImgDescriptor = { 0 },
+    sdrImgDescriptor = { 0 };
 
   uhdr_mem_block_t
-    sdr_profile, hdr_profile;
+    sdr_profile = { 0 },
+    hdr_profile = { 0 };
+
+  StringInfo
+    *base_image_profile = (StringInfo *) NULL,
+    *resized_gainmap_profile = (StringInfo *) NULL;
+
+  uhdr_compressed_image_t
+    base_image = { 0 },
+    gainmap_image = { 0 };
+
+  uhdr_gainmap_metadata_t
+    gainmap_info = { 0 };
+
+  MagickBooleanType
+    gainmap_transform_status = MagickTrue,
+    preserve_gainmap = MagickFalse;
 
   assert(image_info != (const ImageInfo *) NULL);
   assert(image_info->signature == MagickCoreSignature);
@@ -585,65 +1649,203 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
   assert(image->signature == MagickCoreSignature);
   if (IsEventLogging() != MagickFalse)
     (void) LogMagickEvent(TraceEvent, GetMagickModule(), "%s", image->filename);
-  status = OpenBlob(image_info, image, WriteBinaryBlobMode, exception);
-  if (status == MagickFalse)
-    return (status);
+  const StringInfo *gainmap_profile = GetImageProfile(image,"hdrgm");
 
-  for (int i = 0; i < GetImageListLength(image); i++)
+  const size_t
+    image_count = GetImageListLength(image);
+
+  if (gainmap_profile != (const StringInfo *) NULL)
+    {
+      /*
+        Preserve gainmap+metadata (for transcoding). If these exist, we do not
+        regenerate the gainmap.  Instead, we pass them directly to the encoder.
+      */
+      /*
+        Compressed image descriptor.
+      */
+      resized_gainmap_profile=TransformGainMapProfile(image_info,image,
+        gainmap_profile,&gainmap_transform_status,exception);
+      if (gainmap_transform_status == MagickFalse)
+        {
+          status=MagickFalse;
+          goto cleanup;
+        }
+      if (resized_gainmap_profile != (StringInfo *) NULL)
+        gainmap_profile=(const StringInfo *) resized_gainmap_profile;
+      base_image_profile=EncodeBaseImageProfile(image_info,image,exception);
+      if (base_image_profile == (StringInfo *) NULL)
+        {
+          status=MagickFalse;
+          goto cleanup;
+        }
+      base_image.data=(void *) GetStringInfoDatum(base_image_profile);
+      base_image.data_sz=GetStringInfoLength(base_image_profile);
+      base_image.capacity=base_image.data_sz;
+      base_image.cg=getImageColorGamut(&image->chromaticity);
+      base_image.ct=UHDR_CT_SRGB;
+      base_image.range=UHDR_CR_FULL_RANGE;
+      gainmap_image.data=(void *) GetStringInfoDatum(gainmap_profile);
+      gainmap_image.data_sz=GetStringInfoLength(gainmap_profile);
+      gainmap_image.capacity=gainmap_image.data_sz;
+      gainmap_image.cg=UHDR_CG_UNSPECIFIED;
+      gainmap_image.ct=UHDR_CT_UNSPECIFIED;
+      gainmap_image.range=UHDR_CR_UNSPECIFIED;
+      /*
+        Gainmap metadata descriptor.
+      */
+      GetHDRGMProperty3("GainMapMax",max_content_boost[0],max_content_boost[1],
+        max_content_boost[2]);
+      GetHDRGMProperty3("GainMapMin",min_content_boost[0],min_content_boost[1],
+        min_content_boost[2]);
+      GetHDRGMProperty3("Gamma",gamma[0],gamma[1],gamma[2]);
+      GetHDRGMProperty3("OffsetSDR",offset_sdr[0],offset_sdr[1],offset_sdr[2]);
+      GetHDRGMProperty3("OffsetHDR",offset_hdr[0],offset_hdr[1],offset_hdr[2]);
+      GetHDRGMProperty("HDRCapacityMin",hdr_capacity_min);
+      GetHDRGMProperty("HDRCapacityMax",hdr_capacity_max);
+      GetHDRGMPropertyInt("UseBaseColorGrade",use_base_cg);
+      if (status == MagickFalse)
+        goto cleanup;
+      preserve_gainmap=MagickTrue;
+    }
+
+  const char
+    *option = GetImageOption(image_info,"uhdr:hdr-color-transfer");
+
+  uhdr_color_transfer_t
+    hdr_ct = (option != (const char *) NULL) ? map_ct_to_uhdr_ct(option) : UHDR_CT_SRGB;
+
+  if (hdr_ct == UHDR_CT_UNSPECIFIED)
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),ConfigureWarning,
+        "invalid hdr color transfer received, ","%s","exiting ... ");
+      status=MagickFalse;
+      goto cleanup;
+    }
+
+  /*
+    HDR intent:
+      color transfer linear, MUST be rgba half float - bitdepth is ATLEAST 16
+      color transfer hlg or pq, MUST be rgba1010102/p010-bitdepth is ATLEAST 10
+
+    SDR intent
+      color transfer sRGB MUST be rgba8888/yuv420 - bitdepth MUST be 8
+  */
+  int
+    hdrIntentMinDepth = hdr_ct == UHDR_CT_LINEAR ? 16 : 10;
+
+  for (int i = 0; i < (ssize_t) image_count; i++)
   {
+    /* Classify image as hdr/sdr intent basing on depth */
     int
-      bpp = (image->depth >= 10) ? 2 : 1;
-
-    int
-      aligned_width = image->columns + (image->columns & 1);
-
-    int
-      aligned_height = image->rows + (image->rows & 1);
+      bpp;
 
     ssize_t
-      picSize = aligned_width * aligned_height * bpp * 1.5 /* 2x2 sub-sampling */;
+      aligned_height,
+      aligned_width;
+
+    size_t
+      picSize;
 
     void
       *crBuffer = NULL, *cbBuffer = NULL, *yBuffer = NULL;
 
-    if (image->colorspace == RGBColorspace || image->colorspace == sRGBColorspace)
+    if (((double) image->columns > sqrt(MAGICK_SSIZE_MAX/3.0)) ||
+        ((double) image->rows > sqrt(MAGICK_SSIZE_MAX/3.0)))
+      {
+        (void) ThrowMagickException(exception,GetMagickModule(),ImageError,
+          "WidthOrHeightExceedsLimit","%s",image->filename);
+        goto next_image;
+      }
+    bpp = (int) image->depth >= hdrIntentMinDepth ? 2 : 1;
+    if (IssRGBCompatibleColorspace(image->colorspace) && !IsGrayColorspace(image->colorspace))
     {
-      bpp = 4;
-      picSize = aligned_width * aligned_height * bpp;
+      if ((int) image->depth >= hdrIntentMinDepth && hdr_ct == UHDR_CT_LINEAR)
+        bpp = 8; /* rgbahalf float */
+      else
+        bpp = 4; /* rgba1010102 or rgba8888 */
     }
-    else if (image->colorspace != YCbCrColorspace)
+    else if (IsYCbCrCompatibleColorspace(image->colorspace))
     {
-      status = TransformImageColorspace(image, YCbCrColorspace, exception);
-      if (status == MagickFalse)
-        break;
+      if ((int) image->depth >= hdrIntentMinDepth && hdr_ct == UHDR_CT_LINEAR)
+      {
+        (void) ThrowMagickException(exception, GetMagickModule(), ConfigureWarning,
+          "linear color transfer inputs MUST be compatible with RGB Colorspace, ", "%s",
+          "ignoring ...");
+        goto next_image;
+      }
+    }
+    else
+    {
+      (void) ThrowMagickException(exception, GetMagickModule(), ConfigureWarning,
+        "Received image with color space incompatible with RGB/YCbCr, ","%s","ignoring ...");
+      goto next_image;
     }
 
-    if (image->depth >= 10 && hdrImgDescriptor.planes[UHDR_PLANE_Y] != NULL)
+    aligned_width = image->columns + (image->columns & 1);
+    aligned_height = image->rows + (image->rows & 1);
+    if (HeapOverflowSanityCheckGetSize(aligned_width,aligned_height,&picSize) != MagickFalse)
+      {
+        (void) ThrowMagickException(exception,GetMagickModule(),
+          CorruptImageError,"ImproperImageHeader","%s",image->filename);
+        goto next_image;
+      }
+    if (HeapOverflowSanityCheckGetSize(picSize,bpp,&picSize) != MagickFalse)
+      {
+        (void) ThrowMagickException(exception,GetMagickModule(),
+          CorruptImageError,"ImproperImageHeader","%s",image->filename);
+        goto next_image;
+      }
+    if (bpp < 4)
+      {
+        if (HeapOverflowSanityCheckGetSize(picSize,3,&picSize) != MagickFalse)
+          {
+            (void) ThrowMagickException(exception,GetMagickModule(),
+              CorruptImageError,"ImproperImageHeader","%s",image->filename);
+            goto next_image;
+          }
+        picSize/=2;
+      }
+
+    if (((int) image->depth < hdrIntentMinDepth) && (image->depth != 8))
     {
+      (void) ThrowMagickException(exception, GetMagickModule(), ConfigureWarning,
+        "Received image with unexpected bit depth","%s","ignoring ...");
+      goto next_image;
+    }
+
+    if (((int) image->depth >= hdrIntentMinDepth) &&
+        (hdrImgDescriptor.planes[UHDR_PLANE_Y] != NULL))
+    {
+      (void) ThrowMagickException(exception, GetMagickModule(), ConfigureWarning,
+        "Received multiple hdr intent resources, ","%s","overwriting ...");
       RelinquishMagickMemory(hdrImgDescriptor.planes[UHDR_PLANE_Y]);
       hdrImgDescriptor.planes[UHDR_PLANE_Y] = NULL;
     }
-    else if (image->depth == 8 && sdrImgDescriptor.planes[UHDR_PLANE_Y] != NULL)
+    else if ((image->depth == 8) &&
+             (sdrImgDescriptor.planes[UHDR_PLANE_Y] != NULL))
     {
+      (void) ThrowMagickException(exception,GetMagickModule(),ConfigureWarning,
+        "Received multiple sdr intent resources, ","%s","overwriting ...");
       RelinquishMagickMemory(sdrImgDescriptor.planes[UHDR_PLANE_Y]);
       sdrImgDescriptor.planes[UHDR_PLANE_Y] = NULL;
     }
 
-    yBuffer = AcquireMagickMemory(picSize);
+    yBuffer = AcquireQuantumMemory(picSize,1);
     if (yBuffer == NULL)
     {
       status = MagickFalse;
       break;
     }
 
-    if (image->depth >= 10)
+    if ((int) image->depth >= hdrIntentMinDepth)
     {
-      if (image->colorspace == YCbCrColorspace)
+      if (IsYCbCrCompatibleColorspace(image->colorspace))
       {
         cbBuffer = ((uint16_t *) yBuffer) + aligned_width * aligned_height;
         crBuffer = ((uint16_t *) cbBuffer) + 1;
 
-        fillRawImageDescriptor(&hdrImgDescriptor, image_info, image, UHDR_IMG_FMT_24bppYCbCrP010);
+        fillRawImageDescriptor(&hdrImgDescriptor, image_info, image, UHDR_IMG_FMT_24bppYCbCrP010,
+                               hdr_ct);
 
         hdrImgDescriptor.planes[UHDR_PLANE_Y] = yBuffer;
         hdrImgDescriptor.planes[UHDR_PLANE_UV] = cbBuffer;
@@ -655,7 +1857,10 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
       }
       else
       {
-        fillRawImageDescriptor(&hdrImgDescriptor, image_info, image, UHDR_IMG_FMT_32bppRGBA1010102);
+        fillRawImageDescriptor(&hdrImgDescriptor, image_info, image,
+                               hdr_ct == UHDR_CT_LINEAR ? UHDR_IMG_FMT_64bppRGBAHalfFloat
+                                                        : UHDR_IMG_FMT_32bppRGBA1010102,
+                               hdr_ct);
 
         hdrImgDescriptor.planes[UHDR_PLANE_PACKED] = yBuffer;
         hdrImgDescriptor.planes[UHDR_PLANE_U] = NULL;
@@ -670,12 +1875,13 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
     }
     else if (image->depth == 8)
     {
-      if (image->colorspace == YCbCrColorspace)
+      if (IsYCbCrCompatibleColorspace(image->colorspace))
       {
         cbBuffer = ((uint8_t *) yBuffer) + aligned_width * aligned_height;
         crBuffer = ((uint8_t *) cbBuffer) + ((aligned_width / 2) * (aligned_height / 2));
 
-        fillRawImageDescriptor(&sdrImgDescriptor, image_info, image, UHDR_IMG_FMT_12bppYCbCr420);
+        fillRawImageDescriptor(&sdrImgDescriptor, image_info, image, UHDR_IMG_FMT_12bppYCbCr420,
+                               UHDR_CT_SRGB);
 
         sdrImgDescriptor.planes[UHDR_PLANE_Y] = yBuffer;
         sdrImgDescriptor.planes[UHDR_PLANE_U] = cbBuffer;
@@ -687,7 +1893,8 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
       }
       else
       {
-        fillRawImageDescriptor(&sdrImgDescriptor, image_info, image, UHDR_IMG_FMT_32bppRGBA8888);
+        fillRawImageDescriptor(&sdrImgDescriptor, image_info, image, UHDR_IMG_FMT_32bppRGBA8888,
+                               UHDR_CT_SRGB);
 
         sdrImgDescriptor.planes[UHDR_PLANE_PACKED] = yBuffer;
         sdrImgDescriptor.planes[UHDR_PLANE_U] = NULL;
@@ -718,7 +1925,7 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
 
       for (x = 0; x < (ssize_t) image->columns; x++)
       {
-        if (image->depth >= 10)
+        if ((int) image->depth >= hdrIntentMinDepth)
         {
           if (hdrImgDescriptor.fmt == UHDR_IMG_FMT_24bppYCbCrP010)
           {
@@ -735,6 +1942,22 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
                 ScaleQuantumToShort(GetPixelCr(image, p)) & 0xFFC0;
             }
           }
+          else if (hdrImgDescriptor.fmt == UHDR_IMG_FMT_64bppRGBAHalfFloat)
+          {
+            uint64_t
+              *rgbaBase = yBuffer;
+
+            unsigned short
+              r, g, b, a;
+
+            r = SinglePrecisionToHalf(QuantumScale * GetPixelRed(image, p));
+            g = SinglePrecisionToHalf(QuantumScale * GetPixelGreen(image, p));
+            b = SinglePrecisionToHalf(QuantumScale * GetPixelBlue(image, p));
+            a = SinglePrecisionToHalf(QuantumScale * GetPixelAlpha(image, p));
+
+            rgbaBase[y * hdrImgDescriptor.stride[UHDR_PLANE_PACKED] + x] =
+                ((uint64_t)a << 48) | ((uint64_t)b << 32) | (g << 16) | (r);
+          }
           else
           {
             uint32_t
@@ -748,7 +1971,7 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
             b = ScaleQuantumToShort(GetPixelBlue(image, p)) & 0xFFC0;
 
             rgbBase[y * hdrImgDescriptor.stride[UHDR_PLANE_PACKED] + x] =
-                (0x3 << 30) | (b << 14) | (g << 4) | (r >> 6);
+                (0x3U << 30) | (b << 14) | (g << 4) | (r >> 6);
           }
         }
         else if (image->depth == 8)
@@ -786,7 +2009,9 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
         p += GetPixelChannels(image);
       }
     }
-    if (i != GetImageListLength(image) - 1)
+
+next_image:
+    if (i != (ssize_t) image_count - 1)
     {
       if (GetNextImageInList(image) == (Image *) NULL)
       {
@@ -799,7 +2024,7 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
     }
 
     status = SetImageProgress(image, SaveImageTag, (MagickOffsetType)i,
-      GetImageListLength(image));
+      image_count);
     if (status == MagickFalse)
       break;
   }
@@ -821,21 +2046,90 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
     }                                                                                         \
   }
 
-    if (image->quality > 0 && image->quality <= 100)
+    if (handle == NULL)
+      {
+        (void) ThrowMagickException(exception,GetMagickModule(),CoderError,
+          "FailedToCreateEncoder","`%s'",image->filename);
+        status=MagickFalse;
+      }
+
+    if ((status != MagickFalse) && (preserve_gainmap != MagickFalse))
+      {
+        CHECK_IF_ERR(uhdr_enc_set_compressed_image(handle,&base_image,
+          UHDR_BASE_IMG))
+        if (status != MagickFalse)
+          CHECK_IF_ERR(uhdr_enc_set_gainmap_image(handle,&gainmap_image,
+            &gainmap_info))
+      }
+    else
+      {
+        /* Configure hdr and sdr intents */
+        if (status != MagickFalse && hdrImgDescriptor.planes[UHDR_PLANE_Y])
+        {
+          CHECK_IF_ERR(uhdr_enc_set_raw_image(handle, &hdrImgDescriptor, UHDR_HDR_IMG))
+          if ((status != MagickFalse) && (hdr_profile.data_sz != 0))
+            CHECK_IF_ERR(uhdr_enc_set_exif_data(handle, &hdr_profile))
+        }
+
+        if (status != MagickFalse && sdrImgDescriptor.planes[UHDR_PLANE_Y])
+        {
+          CHECK_IF_ERR(uhdr_enc_set_raw_image(handle, &sdrImgDescriptor, UHDR_SDR_IMG))
+          if ((status != MagickFalse) && (sdr_profile.data_sz != 0))
+            CHECK_IF_ERR(uhdr_enc_set_exif_data(handle, &sdr_profile))
+        }
+      }
+
+    /* Configure encoding settings */
+    if (status != MagickFalse && image->quality > 0 && image->quality <= 100)
       CHECK_IF_ERR(uhdr_enc_set_quality(handle, image->quality, UHDR_BASE_IMG))
 
-    if (status != MagickFalse && hdrImgDescriptor.planes[UHDR_PLANE_Y])
+    const char
+      *option;
+
+    if ((status != MagickFalse) && (preserve_gainmap == MagickFalse))
     {
-      CHECK_IF_ERR(uhdr_enc_set_raw_image(handle, &hdrImgDescriptor, UHDR_HDR_IMG))
-      if (hdr_profile.data_sz != 0)
-        CHECK_IF_ERR(uhdr_enc_set_exif_data(handle, &hdr_profile))
+      option = GetImageOption(image_info, "uhdr:gainmap-quality");
+      if (option != (const char *)NULL)
+        CHECK_IF_ERR(uhdr_enc_set_quality(handle, atoi(option), UHDR_GAIN_MAP_IMG))
     }
 
-    if (status != MagickFalse && sdrImgDescriptor.planes[UHDR_PLANE_Y])
+    if ((status != MagickFalse) && (preserve_gainmap == MagickFalse))
+      CHECK_IF_ERR(uhdr_enc_set_using_multi_channel_gainmap(handle, 1))
+
+    if ((status != MagickFalse) && (preserve_gainmap == MagickFalse))
+      CHECK_IF_ERR(uhdr_enc_set_gainmap_scale_factor(handle, 1))
+
+    if ((status != MagickFalse) && (preserve_gainmap == MagickFalse))
+      CHECK_IF_ERR(uhdr_enc_set_preset(handle, UHDR_USAGE_BEST_QUALITY))
+
+    /* Configure gainmap metadata */
+    if ((status != MagickFalse) && (preserve_gainmap == MagickFalse))
     {
-      CHECK_IF_ERR(uhdr_enc_set_raw_image(handle, &sdrImgDescriptor, UHDR_SDR_IMG))
-      if (sdr_profile.data_sz != 0)
-        CHECK_IF_ERR(uhdr_enc_set_exif_data(handle, &sdr_profile))
+      option = GetImageOption(image_info, "uhdr:gainmap-gamma");
+      if (option != (const char *)NULL)
+        CHECK_IF_ERR(uhdr_enc_set_gainmap_gamma(handle, atof(option)))
+    }
+
+    if ((status != MagickFalse) && (preserve_gainmap == MagickFalse))
+    {
+      option = GetImageOption(image_info, "uhdr:gainmap-min-content-boost");
+      float minContentBoost = option != (const char *)NULL ? atof(option) : FLT_MIN;
+
+      option = GetImageOption(image_info, "uhdr:gainmap-max-content-boost");
+      float maxContentBoost = option != (const char *)NULL ? atof(option) : FLT_MAX;
+
+      if (minContentBoost != FLT_MIN || maxContentBoost != FLT_MAX)
+        CHECK_IF_ERR(uhdr_enc_set_min_max_content_boost(handle, minContentBoost, maxContentBoost))
+    }
+
+    if ((status != MagickFalse) && (preserve_gainmap == MagickFalse))
+    {
+      option = GetImageOption(image_info, "uhdr:target-display-peak-brightness");
+      float targetDispPeakBrightness = option != (const char *)NULL ? atof(option) : -1.0f;
+
+      if (targetDispPeakBrightness > 0.0f)
+
+        CHECK_IF_ERR(uhdr_enc_set_target_display_peak_brightness(handle, targetDispPeakBrightness))
     }
 
     if (status != MagickFalse)
@@ -845,21 +2139,33 @@ static MagickBooleanType WriteUHDRImage(const ImageInfo *image_info,
     {
       uhdr_compressed_image_t *output = uhdr_get_encoded_stream(handle);
 
-      (void) WriteBlob(image, output->data_sz, output->data);
+      status=OpenBlob(image_info,images,WriteBinaryBlobMode,exception);
+      if (status != MagickFalse)
+        {
+          if (WriteBlob(images,output->data_sz,output->data) !=
+              (ssize_t) output->data_sz)
+            status=MagickFalse;
+          if (CloseBlob(images) == MagickFalse)
+            status=MagickFalse;
+        }
 
       uhdr_release_encoder(handle);
     }
   }
 #undef CHECK_IF_ERR
 
-  if (CloseBlob(image) == MagickFalse)
-    status = MagickFalse;
-
+cleanup:
   if (hdrImgDescriptor.planes[UHDR_PLANE_Y])
     RelinquishMagickMemory(hdrImgDescriptor.planes[UHDR_PLANE_Y]);
 
   if (sdrImgDescriptor.planes[UHDR_PLANE_Y])
     RelinquishMagickMemory(sdrImgDescriptor.planes[UHDR_PLANE_Y]);
+
+  if (resized_gainmap_profile != (StringInfo *) NULL)
+    resized_gainmap_profile=DestroyStringInfo(resized_gainmap_profile);
+
+  if (base_image_profile != (StringInfo *) NULL)
+    base_image_profile=DestroyStringInfo(base_image_profile);
 
   return status;
 }

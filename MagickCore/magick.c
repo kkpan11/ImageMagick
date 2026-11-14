@@ -24,7 +24,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -93,9 +93,6 @@
 #include "MagickCore/utility.h"
 #include "MagickCore/utility-private.h"
 #include "MagickCore/xwindow-private.h"
-#if defined(MAGICKCORE_XML_DELEGATE)
-#  include <libxml/parser.h>
-#endif
 
 /*
   Define declarations.
@@ -543,7 +540,7 @@ MagickExport MagickBooleanType GetMagickEncoderThreadSupport(
 {
   assert(magick_info != (MagickInfo *) NULL);
   assert(magick_info->signature == MagickCoreSignature);
-  return(((magick_info->flags & CoderDecoderThreadSupportFlag) == 0) ?
+  return(((magick_info->flags & CoderEncoderThreadSupportFlag) == 0) ?
     MagickFalse : MagickTrue);
 }
 
@@ -1352,7 +1349,7 @@ MagickPrivate void MagickComponentTerminus(void)
 %
 %  The format of the MagickCoreGenesis function is:
 %
-%      MagickCoreGenesis(const char *path,
+%      void MagickCoreGenesis(const char *path,
 %        const MagickBooleanType establish_signal_handlers)
 %
 %  A description of each parameter follows:
@@ -1436,7 +1433,11 @@ static void MagickSignalHandler(int signal_number)
 #endif
 #if defined(SIGINT)
   if (signal_number == SIGINT)
-    _exit(signal_number);
+    {
+      signal(SIGINT,SIG_DFL);
+      raise(SIGINT);
+      _exit(signal_number);
+    }
 #endif
 #if defined(MAGICKCORE_HAVE_RAISE)
   if (signal_handlers[signal_number] != MagickSignalHandler)
@@ -1632,7 +1633,7 @@ MagickExport void MagickCoreGenesis(const char *path,
 %
 %  The format of the MagickCoreTerminus function is:
 %
-%      MagickCoreTerminus(void)
+%      void MagickCoreTerminus(void)
 %
 */
 MagickExport void MagickCoreTerminus(void)
@@ -1646,9 +1647,6 @@ MagickExport void MagickCoreTerminus(void)
     }
   MonitorComponentTerminus();
   RegistryComponentTerminus();
-#if defined(MAGICKCORE_XML_DELEGATE)
-  xmlCleanupParser();
-#endif
   AnnotateComponentTerminus();
   MimeComponentTerminus();
   TypeComponentTerminus();
@@ -1774,6 +1772,7 @@ MagickPrivate void ResetMagickPrecision(void)
 %  A negative value forces the precision to reset to a default value according
 %  to the environment variable "MAGICK_PRECISION", the current 'policy'
 %  configuration setting, or the default value of '6', in that order.
+%  Nonpositive configuration values use the default precision.
 %
 %  The format of the SetMagickPrecision method is:
 %
@@ -1810,6 +1809,8 @@ MagickExport int SetMagickPrecision(const int precision)
       if (limit != (char *) NULL)
         {
           magick_precision=StringToInteger(limit);
+          if (magick_precision <= 0)
+            magick_precision=MagickPrecision;
           limit=DestroyString(limit);
         }
     }

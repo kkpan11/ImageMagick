@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -96,9 +96,6 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
       flag;
   } TIMInfo;
 
-  TIMInfo
-    tim_info;
-
   Image
     *image;
 
@@ -109,17 +106,8 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
   MagickBooleanType
     status;
 
-  ssize_t
-    x;
-
   Quantum
     *q;
-
-  ssize_t
-    i;
-
-  unsigned char
-    *p;
 
   size_t
     bytes_per_line,
@@ -130,9 +118,15 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
 
   ssize_t
     count,
+    i,
+    x,
     y;
 
+  TIMInfo
+    tim_info;
+
   unsigned char
+    *p,
     *tim_pixels;
 
   unsigned short
@@ -178,7 +172,7 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
       default: bits_per_pixel=4; break;
     }
     image->depth=8;
-    if (has_clut)
+    if (has_clut != 0)
       {
         unsigned char
           *tim_colormap;
@@ -186,9 +180,9 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
         /*
           Read TIM raster colormap.
         */
-        (void)ReadBlobLSBLong(image);
-        (void)ReadBlobLSBShort(image);
-        (void)ReadBlobLSBShort(image);
+        (void) ReadBlobLSBLong(image);
+        (void) ReadBlobLSBShort(image);
+        (void) ReadBlobLSBShort(image);
         width=ReadBlobLSBShort(image);
         height=ReadBlobLSBShort(image);
         image->columns=width;
@@ -231,7 +225,8 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
     (void) ReadBlobLSBShort(image);
     width=ReadBlobLSBShort(image);
     height=ReadBlobLSBShort(image);
-    image_size=2*width*height;
+    if (HeapOverflowSanityCheckGetSize(2*width,height,&image_size) != MagickFalse)
+      ThrowReaderException(CorruptImageError,"ImproperImageHeader");
     if (image_size > GetBlobSize(image))
       ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
     bytes_per_line=width*2;
@@ -272,17 +267,17 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
           p=tim_pixels+y*(ssize_t) bytes_per_line;
           for (x=0; x < ((ssize_t) image->columns-1); x+=2)
           {
-            SetPixelIndex(image,(*p) & 0x0f,q);
-            q+=GetPixelChannels(image);
-            SetPixelIndex(image,(*p >> 4) & 0x0f,q);
+            SetPixelIndex(image,(Quantum) ((*p) & 0x0f),q);
+            q+=(ptrdiff_t) GetPixelChannels(image);
+            SetPixelIndex(image,(Quantum) ((*p >> 4) & 0x0f),q);
             p++;
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
           if ((image->columns % 2) != 0)
             {
-              SetPixelIndex(image,(*p >> 4) & 0x0f,q);
+              SetPixelIndex(image,(Quantum) ((*p >> 4) & 0x0f),q);
               p++;
-              q+=GetPixelChannels(image);
+              q+=(ptrdiff_t) GetPixelChannels(image);
             }
           if (SyncAuthenticPixels(image,exception) == MagickFalse)
             break;
@@ -310,7 +305,7 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
           for (x=0; x < (ssize_t) image->columns; x++)
           {
             SetPixelIndex(image,*p++,q);
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
           if (SyncAuthenticPixels(image,exception) == MagickFalse)
             break;
@@ -345,7 +340,7 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
               (1UL*word >> 5) & 0x1f)),q);
             SetPixelRed(image,ScaleCharToQuantum(ScaleColor5to8(
               (1UL*word >> 0) & 0x1f)),q);
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
           if (SyncAuthenticPixels(image,exception) == MagickFalse)
             break;
@@ -375,7 +370,7 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
             SetPixelRed(image,ScaleCharToQuantum(*p++),q);
             SetPixelGreen(image,ScaleCharToQuantum(*p++),q);
             SetPixelBlue(image,ScaleCharToQuantum(*p++),q);
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
           if (SyncAuthenticPixels(image,exception) == MagickFalse)
             break;

@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -139,8 +139,6 @@ static Image *ReadARTImage(const ImageInfo *image_info,ExceptionInfo *exception)
   image->columns=(size_t) ReadBlobLSBShort(image);
   (void) ReadBlobLSBShort(image);
   image->rows=(size_t) ReadBlobLSBShort(image);
-  if ((image->columns == 0) || (image->rows == 0))
-    ThrowReaderException(CorruptImageError,"ImproperImageHeader");
   if (image_info->ping != MagickFalse)
     {
       (void) CloseBlob(image);
@@ -343,16 +341,22 @@ static MagickBooleanType WriteARTImage(const ImageInfo *image_info,Image *image,
       GrayQuantum,pixels,exception);
     count=WriteBlob(image,length,pixels);
     if (count != (ssize_t) length)
-      break;
+      {
+        status=MagickFalse;
+        break;
+      }
     count=WriteBlob(image,(size_t) (-(ssize_t) length) & 0x01,pixels);
+    if (count != (ssize_t) (-(ssize_t) length & 0x01))
+      {
+        status=MagickFalse;
+        break;
+      }
     status=SetImageProgress(image,SaveImageTag,(MagickOffsetType) y,
       image->rows);
     if (status == MagickFalse)
       break;
   }
   quantum_info=DestroyQuantumInfo(quantum_info);
-  if (y < (ssize_t) image->rows)
-    ThrowWriterException(CorruptImageError,"UnableToWriteImageData");
   if (CloseBlob(image) == MagickFalse)
     status=MagickFalse;
   return(status);

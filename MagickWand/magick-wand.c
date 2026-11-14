@@ -23,13 +23,13 @@
 %                                 August 2003                                 %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2003 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -123,7 +123,7 @@ WandExport MagickWand *CloneMagickWand(const MagickWand *wand)
   clone_wand=(MagickWand *) AcquireCriticalMemory(sizeof(*clone_wand));
   (void) memset(clone_wand,0,sizeof(*clone_wand));
   clone_wand->id=AcquireWandId();
-  (void) FormatLocaleString(clone_wand->name,MagickPathExtent,"%s-%.20g",
+  (void) FormatLocaleString(clone_wand->name,MagickPathExtent,"%s-%.17g",
     MagickWandId,(double) clone_wand->id);
   clone_wand->exception=AcquireExceptionInfo();
   InheritException(clone_wand->exception,wand->exception);
@@ -1079,10 +1079,10 @@ WandExport MagickWand *NewMagickWand(void)
   wand=(MagickWand *) AcquireMagickMemory(sizeof(*wand));
   if (wand == (MagickWand *) NULL)
     ThrowWandFatalException(ResourceLimitFatalError,"MemoryAllocationFailed",
-      GetExceptionMessage(errno));
+      (char *) NULL);
   (void) memset(wand,0,sizeof(*wand));
   wand->id=AcquireWandId();
-  (void) FormatLocaleString(wand->name,MagickPathExtent,"%s-%.20g",MagickWandId,
+  (void) FormatLocaleString(wand->name,MagickPathExtent,"%s-%.17g",MagickWandId,
     (double) wand->id);
   wand->images=NewImageList();
   wand->image_info=AcquireImageInfo();

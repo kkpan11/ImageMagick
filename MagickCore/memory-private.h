@@ -1,12 +1,12 @@
 /*
   Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization
   dedicated to making software imaging solutions freely available.
-  
+
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
-  
-    https://imagemagick.org/script/license.php
-  
+
+    https://imagemagick.org/license/
+
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -43,6 +43,17 @@ extern "C" {
 #define MagickAssumeAligned(address)  (address)
 #endif
 
+static inline MagickBooleanType HeapOverflowCheckAdd(const size_t size,
+  const size_t increment)
+{
+  if (size > (MAGICK_SIZE_MAX-increment))
+    {
+      errno=ENOMEM;
+      return(MagickTrue);
+    }
+  return(MagickFalse);
+}
+
 static inline size_t OverAllocateMemory(const size_t length)
 {
   size_t
@@ -61,7 +72,6 @@ extern MagickPrivate MagickBooleanType
   ShredMagickMemory(void *,const size_t);
 
 extern MagickPrivate void
-  ResetMaxMemoryRequest(void),
   ResetVirtualAnonymousMemory(void),
   SetMaxMemoryRequest(const MagickSizeType),
   SetMaxProfileSize(const MagickSizeType);

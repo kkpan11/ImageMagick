@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -160,6 +160,8 @@ static Image *ReadMAPImage(const ImageInfo *image_info,ExceptionInfo *exception)
   if (status == MagickFalse)
     ThrowReaderException(ResourceLimitError,"MemoryAllocationFailed");
   depth=GetImageQuantumDepth(image,MagickTrue);
+  if ((depth <= 8) && (image->colors > 256))
+    ThrowReaderException(CorruptImageError,"ImproperImageHeader");
   packet_size=(size_t) (depth/8);
   pixels=(unsigned char *) AcquireQuantumMemory(image->columns,packet_size*
     sizeof(*pixels));
@@ -232,17 +234,17 @@ static Image *ReadMAPImage(const ImageInfo *image_info,ExceptionInfo *exception)
       break;
     for (x=0; x < (ssize_t) image->columns; x++)
     {
-      index=ConstrainColormapIndex(image,*p,exception);
+      index=(Quantum) ConstrainColormapIndex(image,*p,exception);
       p++;
       if (image->colors > 256)
         {
-          index=ConstrainColormapIndex(image,(ssize_t) (((size_t) index << 8)+
-            (size_t) (*p)),exception);
+          index=(Quantum) ConstrainColormapIndex(image,(ssize_t)
+            (((size_t) index << 8)+(size_t) (*p)),exception);
           p++;
         }
       SetPixelIndex(image,index,q);
       SetPixelViaPixelInfo(image,image->colormap+(ssize_t) index,q);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;
@@ -420,20 +422,20 @@ static MagickBooleanType WriteMAPImage(const ImageInfo *image_info,Image *image,
   if (image->colors <= 256)
     for (i=0; i < (ssize_t) image->colors; i++)
     {
-      *q++=(unsigned char) ScaleQuantumToChar(image->colormap[i].red);
-      *q++=(unsigned char) ScaleQuantumToChar(image->colormap[i].green);
-      *q++=(unsigned char) ScaleQuantumToChar(image->colormap[i].blue);
+      *q++=(unsigned char) ScaleQuantumToChar((Quantum) image->colormap[i].red);
+      *q++=(unsigned char) ScaleQuantumToChar((Quantum) image->colormap[i].green);
+      *q++=(unsigned char) ScaleQuantumToChar((Quantum) image->colormap[i].blue);
     }
   else
     for (i=0; i < (ssize_t) image->colors; i++)
     {
-      *q++=(unsigned char) (ScaleQuantumToShort(image->colormap[i].red) >> 8);
-      *q++=(unsigned char) (ScaleQuantumToShort(image->colormap[i].red) & 0xff);
-      *q++=(unsigned char) (ScaleQuantumToShort(image->colormap[i].green) >> 8);
-      *q++=(unsigned char) (ScaleQuantumToShort(image->colormap[i].green) &
+      *q++=(unsigned char) (ScaleQuantumToShort((Quantum) image->colormap[i].red) >> 8);
+      *q++=(unsigned char) (ScaleQuantumToShort((Quantum) image->colormap[i].red) & 0xff);
+      *q++=(unsigned char) (ScaleQuantumToShort((Quantum) image->colormap[i].green) >> 8);
+      *q++=(unsigned char) (ScaleQuantumToShort((Quantum) image->colormap[i].green) &
         0xff);
-      *q++=(unsigned char) (ScaleQuantumToShort(image->colormap[i].blue) >> 8);
-      *q++=(unsigned char) (ScaleQuantumToShort(image->colormap[i].blue) &
+      *q++=(unsigned char) (ScaleQuantumToShort((Quantum) image->colormap[i].blue) >> 8);
+      *q++=(unsigned char) (ScaleQuantumToShort((Quantum) image->colormap[i].blue) &
         0xff);
     }
   (void) WriteBlob(image,packet_size*image->colors,colormap);
@@ -452,7 +454,7 @@ static MagickBooleanType WriteMAPImage(const ImageInfo *image_info,Image *image,
       if (image->colors > 256)
         *q++=(unsigned char) ((size_t) GetPixelIndex(image,p) >> 8);
       *q++=(unsigned char) ((ssize_t) GetPixelIndex(image,p));
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     (void) WriteBlob(image,(size_t) (q-pixels),pixels);
   }

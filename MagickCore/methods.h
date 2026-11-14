@@ -1,12 +1,12 @@
 /*
   Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization
   dedicated to making software imaging solutions freely available.
-  
+
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
-  
-    https://imagemagick.org/script/license.php
-  
+
+    https://imagemagick.org/license/
+
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -123,7 +123,6 @@ extern "C" {
 #define CacheComponentGenesis  PrependMagickMethod(CacheComponentGenesis)
 #define CacheComponentTerminus  PrependMagickMethod(CacheComponentTerminus)
 #define CannyEdgeImage  PrependMagickMethod(CannyEdgeImage)
-#define CanonicalXMLContent  PrependMagickMethod(CanonicalXMLContent)
 #define CatchException  PrependMagickMethod(CatchException)
 #define CatchImageException  PrependMagickMethod(CatchImageException)
 #define ChannelFxImage  PrependMagickMethod(ChannelFxImage)
@@ -629,12 +628,8 @@ extern "C" {
 #define GetVirtualPixelsNexus  PrependMagickMethod(GetVirtualPixelsNexus)
 #define GetVirtualPixels  PrependMagickMethod(GetVirtualPixels)
 #define GetXMLTreeAttribute  PrependMagickMethod(GetXMLTreeAttribute)
-#define GetXMLTreeAttributes  PrependMagickMethod(GetXMLTreeAttributes)
 #define GetXMLTreeChild  PrependMagickMethod(GetXMLTreeChild)
 #define GetXMLTreeContent  PrependMagickMethod(GetXMLTreeContent)
-#define GetXMLTreeOrdered  PrependMagickMethod(GetXMLTreeOrdered)
-#define GetXMLTreePath  PrependMagickMethod(GetXMLTreePath)
-#define GetXMLTreeProcessingInstructions  PrependMagickMethod(GetXMLTreeProcessingInstructions)
 #define GetXMLTreeSibling  PrependMagickMethod(GetXMLTreeSibling)
 #define GetXMLTreeTag  PrependMagickMethod(GetXMLTreeTag)
 #define GlobExpression  PrependMagickMethod(GlobExpression)
@@ -665,7 +660,6 @@ extern "C" {
 #define InitializeSignature  PrependMagickMethod(InitializeSignature)
 #define InjectImageBlob  PrependMagickMethod(InjectImageBlob)
 #define InsertImageInList  PrependMagickMethod(InsertImageInList)
-#define InsertTagIntoXMLTree  PrependMagickMethod(InsertTagIntoXMLTree)
 #define InsertValueInLinkedList  PrependMagickMethod(InsertValueInLinkedList)
 #define InsertValueInSortedLinkedList  PrependMagickMethod(InsertValueInSortedLinkedList)
 #define IntegralImage  PrependMagickMethod(IntegralImage)
@@ -834,7 +828,6 @@ extern "C" {
 #define PrintStringInfo  PrependMagickMethod(PrintStringInfo)
 #define process_message  PrependMagickMethod(process_message)
 #define ProfileImage  PrependMagickMethod(ProfileImage)
-#define PruneTagFromXMLTree  PrependMagickMethod(PruneTagFromXMLTree)
 #define QuantizeImage  PrependMagickMethod(QuantizeImage)
 #define QuantizeImages  PrependMagickMethod(QuantizeImages)
 #define QueryColorCompliance  PrependMagickMethod(QueryColorCompliance)
@@ -879,6 +872,7 @@ extern "C" {
 #define ReferencePixelCache  PrependMagickMethod(ReferencePixelCache)
 #define RegisterAAIImage  PrependMagickMethod(RegisterAAIImage)
 #define RegisterARTImage  PrependMagickMethod(RegisterARTImage)
+#define RegisterASEImage  PrependMagickMethod(RegisterASEImage)
 #define RegisterASHLARImage  PrependMagickMethod(RegisterASHLARImage)
 #define RegisterAVSImage  PrependMagickMethod(RegisterAVSImage)
 #define RegisterBAYERImage  PrependMagickMethod(RegisterBAYERImage)
@@ -893,6 +887,7 @@ extern "C" {
 #define RegisterCMYKImage  PrependMagickMethod(RegisterCMYKImage)
 #define RegisterCUBEImage  PrependMagickMethod(RegisterCUBEImage)
 #define RegisterCUTImage  PrependMagickMethod(RegisterCUTImage)
+#define RegisterC2PAImage  PrependMagickMethod(RegisterC2PAImage)
 #define RegisterDCMImage  PrependMagickMethod(RegisterDCMImage)
 #define RegisterDDSImage  PrependMagickMethod(RegisterDDSImage)
 #define RegisterDEBUGImage  PrependMagickMethod(RegisterDEBUGImage)
@@ -976,6 +971,7 @@ extern "C" {
 #define RegisterSCREENSHOTImage  PrependMagickMethod(RegisterSCREENSHOTImage)
 #define RegisterSCRImage  PrependMagickMethod(RegisterSCRImage)
 #define RegisterSCTImage  PrependMagickMethod(RegisterSCTImage)
+#define RegisterSF3Image  PrependMagickMethod(RegisterSF3Image)
 #define RegisterSFWImage  PrependMagickMethod(RegisterSFWImage)
 #define RegisterSGIImage  PrependMagickMethod(RegisterSGIImage)
 #define RegisterSIXELImage  PrependMagickMethod(RegisterSIXELImage)
@@ -1002,6 +998,7 @@ extern "C" {
 #define RegisterVIDImage  PrependMagickMethod(RegisterVIDImage)
 #define RegisterVIFFImage  PrependMagickMethod(RegisterVIFFImage)
 #define RegisterVIPSImage  PrependMagickMethod(RegisterVIPSImage)
+#define RegisterWBINFOImage  PrependMagickMethod(RegisterWBINFOImage)
 #define RegisterWBMPImage  PrependMagickMethod(RegisterWBMPImage)
 #define RegisterWEBPImage  PrependMagickMethod(RegisterWEBPImage)
 #define RegisterWPGImage  PrependMagickMethod(RegisterWPGImage)
@@ -1080,6 +1077,7 @@ extern "C" {
 #define RotationalBlurImage  PrependMagickMethod(RotationalBlurImage)
 #define SampleImage  PrependMagickMethod(SampleImage)
 #define SanitizeString  PrependMagickMethod(SanitizeString)
+#define SanitizeStringForIdentifier  PrependMagickMethod(SanitizeStringForIdentifier)
 #define ScaleGeometryKernelInfo  PrependMagickMethod(ScaleGeometryKernelInfo)
 #define ScaleImage  PrependMagickMethod(ScaleImage)
 #define ScaleKernelInfo  PrependMagickMethod(ScaleKernelInfo)
@@ -1184,7 +1182,6 @@ extern "C" {
 #define SetStringInfoPath  PrependMagickMethod(SetStringInfoPath)
 #define SetStringInfo  PrependMagickMethod(SetStringInfo)
 #define SetWarningHandler  PrependMagickMethod(SetWarningHandler)
-#define SetXMLTreeAttribute  PrependMagickMethod(SetXMLTreeAttribute)
 #define SetXMLTreeContent  PrependMagickMethod(SetXMLTreeContent)
 #define ShadeImage  PrependMagickMethod(ShadeImage)
 #define ShadowImage  PrependMagickMethod(ShadowImage)
@@ -1263,6 +1260,7 @@ extern "C" {
 #define UnmapBlob  PrependMagickMethod(UnmapBlob)
 #define UnregisterAAIImage  PrependMagickMethod(UnregisterAAIImage)
 #define UnregisterARTImage  PrependMagickMethod(UnregisterARTImage)
+#define UnregisterASEImage  PrependMagickMethod(UnregisterASEImage)
 #define UnregisterASHLARImage  PrependMagickMethod(UnregisterASHLARImage)
 #define UnregisterAVSImage  PrependMagickMethod(UnregisterAVSImage)
 #define UnregisterBAYERImage  PrependMagickMethod(UnregisterBAYERImage)
@@ -1277,6 +1275,7 @@ extern "C" {
 #define UnregisterCMYKImage  PrependMagickMethod(UnregisterCMYKImage)
 #define UnregisterCUBEImage  PrependMagickMethod(UnregisterCUBEImage)
 #define UnregisterCUTImage  PrependMagickMethod(UnregisterCUTImage)
+#define UnregisterC2PAImage  PrependMagickMethod(UnregisterC2PAImage)
 #define UnregisterDCMImage  PrependMagickMethod(UnregisterDCMImage)
 #define UnregisterDDSImage  PrependMagickMethod(UnregisterDDSImage)
 #define UnregisterDEBUGImage  PrependMagickMethod(UnregisterDEBUGImage)
@@ -1360,6 +1359,7 @@ extern "C" {
 #define UnregisterSCREENSHOTImage  PrependMagickMethod(UnregisterSCREENSHOTImage)
 #define UnregisterSCRImage  PrependMagickMethod(UnregisterSCRImage)
 #define UnregisterSCTImage  PrependMagickMethod(UnregisterSCTImage)
+#define UnregisterSF3Image  PrependMagickMethod(UnregisterSF3Image)
 #define UnregisterSFWImage  PrependMagickMethod(UnregisterSFWImage)
 #define UnregisterSGIImage  PrependMagickMethod(UnregisterSGIImage)
 #define UnregisterSIXELImage  PrependMagickMethod(UnregisterSIXELImage)
@@ -1386,6 +1386,7 @@ extern "C" {
 #define UnregisterVIDImage  PrependMagickMethod(UnregisterVIDImage)
 #define UnregisterVIFFImage  PrependMagickMethod(UnregisterVIFFImage)
 #define UnregisterVIPSImage  PrependMagickMethod(UnregisterVIPSImage)
+#define UnregisterWBINFOImage  PrependMagickMethod(UnregisterWBINFOImage)
 #define UnregisterWBMPImage  PrependMagickMethod(UnregisterWBMPImage)
 #define UnregisterWEBPImage  PrependMagickMethod(UnregisterWEBPImage)
 #define UnregisterWPGImage  PrependMagickMethod(UnregisterWPGImage)
@@ -1420,6 +1421,7 @@ extern "C" {
 #define WriteBlobMSBShort  PrependMagickMethod(WriteBlobMSBShort)
 #define WriteBlobMSBSignedShort  PrependMagickMethod(WriteBlobMSBSignedShort)
 #define WriteBlob  PrependMagickMethod(WriteBlob)
+#define WriteBlobPadding  PrependMagickMethod(WriteBlobPadding)
 #define WriteBlobShort  PrependMagickMethod(WriteBlobShort)
 #define WriteBlobSignedLong  PrependMagickMethod(WriteBlobSignedLong)
 #define WriteBlobString  PrependMagickMethod(WriteBlobString)

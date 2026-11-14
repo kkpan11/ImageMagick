@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -211,7 +211,7 @@ static MagickBooleanType WriteDEBUGImage(const ImageInfo *image_info,
     if (image->alpha_trait != UndefinedPixelTrait)
       (void) ConcatenateMagickString(colorspace,"a",MagickPathExtent);
     (void) FormatLocaleString(buffer,MagickPathExtent,
-      "# ImageMagick pixel debugging: %.20g,%.20g,%.20g,%s\n",(double)
+      "# ImageMagick pixel debugging: %.17g,%.17g,%.17g,%s\n",(double)
       image->columns,(double) image->rows,(double) ((MagickOffsetType)
       GetQuantumRange(image->depth)),colorspace);
     (void) WriteBlobString(image,buffer);
@@ -223,18 +223,18 @@ static MagickBooleanType WriteDEBUGImage(const ImageInfo *image_info,
         break;
       for (x=0; x < (ssize_t) image->columns; x++)
       {
-        (void) FormatLocaleString(buffer,MagickPathExtent,"%.20g,%.20g: ",(double)
+        (void) FormatLocaleString(buffer,MagickPathExtent,"%.17g,%.17g: ",(double)
           x,(double) y);
         (void) WriteBlobString(image,buffer);
         GetPixelInfoPixel(image,p,&pixel);
-        (void) FormatLocaleString(tuple,MagickPathExtent,"%.20g,%.20g,%.20g ",
+        (void) FormatLocaleString(tuple,MagickPathExtent,"%.17g,%.17g,%.17g ",
           (double) pixel.red,(double) pixel.green,(double) pixel.blue);
         if (pixel.colorspace == CMYKColorspace)
           {
             char
               black[MagickPathExtent];
 
-            (void) FormatLocaleString(black,MagickPathExtent,",%.20g ",
+            (void) FormatLocaleString(black,MagickPathExtent,",%.17g ",
               (double) pixel.black);
             (void) ConcatenateMagickString(tuple,black,MagickPathExtent);
           }
@@ -243,13 +243,13 @@ static MagickBooleanType WriteDEBUGImage(const ImageInfo *image_info,
             char
               alpha[MagickPathExtent];
 
-            (void) FormatLocaleString(alpha,MagickPathExtent,",%.20g ",
+            (void) FormatLocaleString(alpha,MagickPathExtent,",%.17g ",
               (double) pixel.alpha);
             (void) ConcatenateMagickString(tuple,alpha,MagickPathExtent);
           }
         (void) WriteBlobString(image,tuple);
         (void) WriteBlobString(image,"\n");
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
       }
       status=SetImageProgress(image,SaveImageTag,(MagickOffsetType) y,
         image->rows);

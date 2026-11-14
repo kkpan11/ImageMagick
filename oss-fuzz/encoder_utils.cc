@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,8 +33,15 @@ static int fuzzEncoderWithStringFileName(const std::string encoder,
 
     image.read(encoder + ":" + fileName);
   }
+#if defined(BUILD_MAIN)
   catch (Magick::Exception &e)
   {
+    std::cout << "Exception when reading: " << e.what() << std::endl;
   }
+#else
+  catch (Magick::Exception)
+  {
+  }
+#endif
   return(0);
 }

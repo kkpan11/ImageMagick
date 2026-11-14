@@ -17,13 +17,13 @@
 %                               January 2000                                  %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2000 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -153,8 +153,6 @@ static Image *ReadOTBImage(const ImageInfo *image_info,ExceptionInfo *exception)
       image->columns=(size_t) ReadBlobMSBShort(image);
       image->rows=(size_t) ReadBlobMSBShort(image);
     }
-  if ((image->columns == 0) || (image->rows == 0))
-    ThrowReaderException(CorruptImageError,"ImproperImageHeader");
   depth=(unsigned char) ReadBlobByte(image);
   if (depth != 1)
     ThrowReaderException(CoderError,"OnlyLevelZerofilesSupported");
@@ -165,6 +163,9 @@ static Image *ReadOTBImage(const ImageInfo *image_info,ExceptionInfo *exception)
       (void) CloseBlob(image);
       return(GetFirstImageInList(image));
     }
+  if ((image->columns > GetBlobSize(image)) ||
+      (image->rows > GetBlobSize(image)))
+    ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
   status=SetImageExtent(image,image->columns,image->rows,exception);
   if (status == MagickFalse)
     return(DestroyImageList(image));
@@ -186,11 +187,11 @@ static Image *ReadOTBImage(const ImageInfo *image_info,ExceptionInfo *exception)
           if (byte == EOF)
             ThrowReaderException(CorruptImageError,"CorruptImage");
         }
-      SetPixelIndex(image,(byte & (0x01 << (7-bit))) ? 0x00 : 0x01,q);
+      SetPixelIndex(image,(Quantum) ((byte & (0x01 << (7-bit))) ? 0x00 : 0x01),q);
       bit++;
       if (bit == 8)
         bit=0;
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;
@@ -377,7 +378,7 @@ static MagickBooleanType WriteOTBImage(const ImageInfo *image_info,Image *image,
           bit=0;
           byte=0;
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (bit != 0)
       (void) WriteBlobByte(image,byte);

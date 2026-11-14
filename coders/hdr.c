@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -259,7 +259,7 @@ static Image *ReadHDRImage(const ImageInfo *image_info,ExceptionInfo *exception)
           do
           {
             if ((size_t) (p-keyword) < (MagickPathExtent-1))
-              *p++=c;
+              *p++=(char) c;
             c=ReadBlobByte(image);
           } while (isalnum((int) ((unsigned char) c)) || (c == '_'));
           *p='\0';
@@ -278,7 +278,7 @@ static Image *ReadHDRImage(const ImageInfo *image_info,ExceptionInfo *exception)
           while ((c != '\n') && (c != '\0') && (c != EOF))
           {
             if ((size_t) (p-value) < (MagickPathExtent-1))
-              *p++=c;
+              *p++=(char) c;
             c=ReadBlobByte(image);
           }
           *p='\0';
@@ -316,7 +316,7 @@ static Image *ReadHDRImage(const ImageInfo *image_info,ExceptionInfo *exception)
             {
               if (LocaleCompare(keyword,"primaries") == 0)
                 {
-                  chromaticity_count=sscanf(value,"%g %g %g %g %g %g %g %g",
+                  chromaticity_count=MagickSscanf(value,"%g %g %g %g %g %g %g %g",
                     &chromaticity[0],&chromaticity[1],&chromaticity[2],
                     &chromaticity[3],&chromaticity[4],&chromaticity[5],
                     &white_point[0],&white_point[1]);
@@ -338,8 +338,11 @@ static Image *ReadHDRImage(const ImageInfo *image_info,ExceptionInfo *exception)
                     height,
                     width;
 
-                  if (sscanf(value,"%d +X %d",&height,&width) == 2)
+                  if (MagickSscanf(value,"%d +X %d",&height,&width) == 2)
                     {
+                      if ((width <= 0) || (height <= 0))
+                        ThrowReaderException(CorruptImageError,
+                          "ImproperImageHeader");
                       image->columns=(size_t) width;
                       image->rows=(size_t) height;
                     }
@@ -361,8 +364,6 @@ static Image *ReadHDRImage(const ImageInfo *image_info,ExceptionInfo *exception)
       while (isspace((int) ((unsigned char) c)) != 0)
         c=ReadBlobByte(image);
   }
-  if ((image->columns == 0) || (image->rows == 0))
-    ThrowReaderException(CorruptImageError,"NegativeOrZeroImageSize");
   if (LocaleCompare(format,"32-bit_rle_rgbe") == 0)
     (void) SetImageColorspace(image,RGBColorspace,exception);
   else if (LocaleCompare(format,"32-bit_rle_xyze") == 0)
@@ -453,7 +454,7 @@ static Image *ReadHDRImage(const ImageInfo *image_info,ExceptionInfo *exception)
                         count=ReadBlob(image,(size_t) count*sizeof(*p),p);
                         if (count < 1)
                           break;
-                        p+=count;
+                        p+=(ptrdiff_t) count;
                       }
                   }
               }
@@ -493,7 +494,7 @@ static Image *ReadHDRImage(const ImageInfo *image_info,ExceptionInfo *exception)
           SetPixelBlue(image,ClampToQuantum((double) QuantumRange*gamma*
             (double) pixel[2]),q);
         }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;
@@ -623,7 +624,7 @@ static size_t HDRWriteRunlengthPixels(Image *image,unsigned char *pixels)
     previous_count=0;
     while ((runlength < MinimumRunlength) && (q < image->columns))
     {
-      q+=runlength;
+      q+=(ptrdiff_t) runlength;
       previous_count=(ssize_t) runlength;
       runlength=1;
       while ((pixels[q] == pixels[q+runlength]) &&
@@ -648,7 +649,7 @@ static size_t HDRWriteRunlengthPixels(Image *image,unsigned char *pixels)
         break;
       if (WriteBlob(image,(size_t) count*sizeof(*pixel),&pixels[p]) < 1)
         break;
-      p+=(size_t) count;
+      p+=(ptrdiff_t) count;
     }
     if (runlength >= MinimumRunlength)
       {
@@ -656,7 +657,7 @@ static size_t HDRWriteRunlengthPixels(Image *image,unsigned char *pixels)
         pixel[1]=pixels[q];
         if (WriteBlob(image,2*sizeof(*pixel),pixel) < 1)
           break;
-        p+=runlength;
+        p+=(ptrdiff_t) runlength;
       }
   }
   return(p);
@@ -744,7 +745,7 @@ static MagickBooleanType WriteHDRImage(const ImageInfo *image_info,Image *image,
   (void) WriteBlob(image,(size_t) count,(unsigned char *) header);
   length=CopyMagickString(header,"FORMAT=32-bit_rle_rgbe\n\n",MagickPathExtent);
   (void) WriteBlob(image,length,(unsigned char *) header);
-  count=FormatLocaleString(header,MagickPathExtent,"-Y %.20g +X %.20g\n",
+  count=FormatLocaleString(header,MagickPathExtent,"-Y %.17g +X %.17g\n",
     (double) image->rows,(double) image->columns);
   (void) WriteBlob(image,(size_t) count,(unsigned char *) header);
   /*
@@ -768,7 +769,10 @@ static MagickBooleanType WriteHDRImage(const ImageInfo *image_info,Image *image,
         pixel[3]=(unsigned char) (image->columns & 0xff);
         count=WriteBlob(image,4*sizeof(*pixel),pixel);
         if (count != (ssize_t) (4*sizeof(*pixel)))
-          break;
+          {
+            status=MagickFalse;
+            break;
+          }
       }
     i=0;
     for (x=0; x < (ssize_t) image->columns; x++)
@@ -816,7 +820,7 @@ static MagickBooleanType WriteHDRImage(const ImageInfo *image_info,Image *image,
           pixels[i++]=pixel[2];
           pixels[i++]=pixel[3];
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if ((image->columns >= 8) && (image->columns <= 0x7ffff))
       {
@@ -828,8 +832,13 @@ static MagickBooleanType WriteHDRImage(const ImageInfo *image_info,Image *image,
       {
         count=WriteBlob(image,4*image->columns*sizeof(*pixels),pixels);
         if (count != (ssize_t) (4*image->columns*sizeof(*pixels)))
-          break;
+          {
+            status=MagickFalse;
+            break;
+          }
       }
+    if (status == MagickFalse)
+      break;
     status=SetImageProgress(image,SaveImageTag,(MagickOffsetType) y,
       image->rows);
     if (status == MagickFalse)

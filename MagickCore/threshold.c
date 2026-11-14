@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -294,9 +294,9 @@ MagickExport Image *AdaptiveThresholdImage(const Image *image,
           if (u == (ssize_t) (width-1))
             channel_bias[channel]+=(double) pixels[i];
           channel_sum[channel]+=(double) pixels[i];
-          pixels+=GetPixelChannels(image);
+          pixels+=(ptrdiff_t) GetPixelChannels(image);
         }
-        pixels+=GetPixelChannels(image)*image->columns;
+        pixels+=(ptrdiff_t) GetPixelChannels(image)*image->columns;
       }
     }
     for (x=0; x < (ssize_t) image->columns; x++)
@@ -326,14 +326,14 @@ MagickExport Image *AdaptiveThresholdImage(const Image *image,
           channel_bias[channel]+=(double) pixels[i];
           pixels+=(width-1)*GetPixelChannels(image);
           channel_sum[channel]+=(double) pixels[i];
-          pixels+=GetPixelChannels(image)*(image->columns+1);
+          pixels+=(ptrdiff_t) GetPixelChannels(image)*(image->columns+1);
         }
         mean=(double) (channel_sum[channel]/number_pixels+bias);
         SetPixelChannel(threshold_image,channel,(Quantum) ((double)
           p[center+i] <= mean ? 0 : QuantumRange),q);
       }
-      p+=GetPixelChannels(image);
-      q+=GetPixelChannels(threshold_image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(threshold_image);
     }
     if (SyncCacheViewAuthenticPixels(threshold_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -711,7 +711,7 @@ MagickExport MagickBooleanType AutoThresholdImage(Image *image,
     {
       double intensity = GetPixelIntensity(image,p);
       histogram[ScaleQuantumToChar(ClampToQuantum(intensity))]++;
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
   }
   image_view=DestroyCacheView(image_view);
@@ -721,7 +721,7 @@ MagickExport MagickBooleanType AutoThresholdImage(Image *image,
   sum=0.0;
   for (i=0; i <= (ssize_t) MaxIntensity; i++)
     sum+=histogram[i];
-  gamma=PerceptibleReciprocal(sum);
+  gamma=MagickSafeReciprocal(sum);
   for (i=0; i <= (ssize_t) MaxIntensity; i++)
     histogram[i]=gamma*histogram[i];
   /*
@@ -872,7 +872,7 @@ MagickExport MagickBooleanType BilevelImage(Image *image,const double threshold,
           pixel=(double) q[i];
         q[i]=(Quantum) (pixel <= threshold ? 0 : QuantumRange);
       }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -1034,7 +1034,7 @@ MagickExport MagickBooleanType BlackThresholdImage(Image *image,
         if (pixel < GetPixelInfoChannel(&threshold,channel))
           q[i]=(Quantum) 0;
       }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -1162,7 +1162,7 @@ MagickExport MagickBooleanType ClampImage(Image *image,ExceptionInfo *exception)
           continue;
         q[i]=ClampPixel((MagickRealType) q[i]);
       }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -1375,7 +1375,7 @@ MagickExport MagickBooleanType ColorThresholdImage(Image *image,
           foreground=MagickFalse;
       }
       SetPixelIndex(image,(Quantum) (foreground != MagickFalse ? 1 : 0),q);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -1677,7 +1677,7 @@ static ThresholdMap *GetThresholdMapFile(const char *xml,const char *filename,
     if ((map->levels[i] < 0) || (map->levels[i] > map->divisor))
       {
         (void) ThrowMagickException(exception,GetMagickModule(),OptionError,
-          "XmlInvalidContent", "<level> %.20g out of range, map \"%s\"",
+          "XmlInvalidContent", "<level> %.17g out of range, map \"%s\"",
           (double) map->levels[i],map_id);
         thresholds=DestroyXMLTree(thresholds);
         map=DestroyThresholdMap(map);
@@ -1969,7 +1969,10 @@ MagickExport MagickBooleanType OrderedDitherImage(Image *image,
     if (fabs(levels[i]) >= 1)
       levels[i]-=1.0;
   if (SetImageStorageClass(image,DirectClass,exception) == MagickFalse)
-    return(MagickFalse);
+    {
+      map=DestroyThresholdMap(map);
+      return(MagickFalse);
+    }
   status=MagickTrue;
   progress=0;
   image_view=AcquireAuthenticCacheView(image,exception);
@@ -2024,7 +2027,7 @@ MagickExport MagickBooleanType OrderedDitherImage(Image *image,
           (y % (ssize_t) map->height)]))*(double) QuantumRange/levels[n]);
         n++;
       }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -2175,7 +2178,7 @@ MagickExport MagickBooleanType PerceptibleImage(Image *image,
         if ((traits & UpdatePixelTrait) != 0)
           q[i]=PerceptibleThreshold(q[i],epsilon);
       }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -2316,7 +2319,7 @@ MagickExport MagickBooleanType RandomThresholdImage(Image *image,
               GetPseudoRandomValue(random_info[id]));
         q[i]=(double) q[i] <= threshold ? 0 : QuantumRange;
       }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -2448,14 +2451,14 @@ MagickExport MagickBooleanType RangeThresholdImage(Image *image,
         else
           if ((pixel >= low_black) && (pixel < low_white))
             q[i]=ClampToQuantum((double) QuantumRange*
-              PerceptibleReciprocal(low_white-low_black)*(pixel-low_black));
+              MagickSafeReciprocal(low_white-low_black)*(pixel-low_black));
           else
             if ((pixel >= low_white) && (pixel <= high_white))
               q[i]=QuantumRange;
             else
               if ((pixel > high_white) && (pixel <= high_black))
                 q[i]=ClampToQuantum((double) QuantumRange*(double)
-                  PerceptibleReciprocal(high_black-high_white)*
+                  MagickSafeReciprocal(high_black-high_white)*
                   (high_black-pixel));
               else
                 if (pixel > high_black)
@@ -2463,7 +2466,7 @@ MagickExport MagickBooleanType RangeThresholdImage(Image *image,
                 else
                   q[i]=(Quantum) 0;
       }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -2625,7 +2628,7 @@ MagickExport MagickBooleanType WhiteThresholdImage(Image *image,
         if (pixel > GetPixelInfoChannel(&threshold,channel))
           q[i]=QuantumRange;
       }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;

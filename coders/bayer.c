@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -231,11 +231,13 @@ ModuleExport size_t RegisterBAYERImage(void)
   entry->decoder=(DecodeImageHandler *) ReadBAYERImage;
   entry->encoder=(EncodeImageHandler *) WriteBAYERImage;
   entry->flags|=CoderRawSupportFlag | CoderEndianSupportFlag;
+  entry->flags^=CoderBlobSupportFlag;
   (void) RegisterMagickInfo(entry);
   entry=AcquireMagickInfo("BAYER","BAYERA","Raw mosaiced and alpha samples");
   entry->decoder=(DecodeImageHandler *) ReadBAYERImage;
   entry->encoder=(EncodeImageHandler *) WriteBAYERImage;
   entry->flags|=CoderRawSupportFlag | CoderEndianSupportFlag;
+  entry->flags^=CoderBlobSupportFlag;
   (void) RegisterMagickInfo(entry);
   return(MagickImageCoderSignature);
 }

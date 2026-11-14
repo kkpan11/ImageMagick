@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -165,8 +165,8 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
       vertical_factor=horizontal_factor;
       if ((flags & SigmaValue) != 0)
         vertical_factor=(ssize_t) geometry_info.sigma;
-      if ((horizontal_factor != 1) && (horizontal_factor != 2) &&
-          (vertical_factor != 1) && (vertical_factor != 2))
+      if (((horizontal_factor != 1) && (horizontal_factor != 2)) ||
+          ((vertical_factor != 1) && (vertical_factor != 2)))
         ThrowReaderException(CorruptImageError,"UnexpectedSamplingFactor");
     }
   if ((interlace == UndefinedInterlace) ||
@@ -230,6 +230,7 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
         if (status == MagickFalse)
           {
             scanline=(unsigned char *) RelinquishMagickMemory(scanline); 
+            chroma_image=DestroyImage(chroma_image);
             image=DestroyImageList(image);
             return((Image *) NULL);
           }
@@ -261,7 +262,7 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
             chroma_image->columns,1,exception);
           if (chroma_pixels == (Quantum *) NULL)
             break;
-          for (x=0; x < (ssize_t) image->columns; x+=2)
+          for (x=0; x < (ssize_t) (image->columns-1); x+=2)
           {
             SetPixelRed(chroma_image,0,chroma_pixels);
             if (quantum == 1)
@@ -271,18 +272,18 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
               {
                 SetPixelGreen(chroma_image,ScaleShortToQuantum(((*p) << 8) |
                   *(p+1)),chroma_pixels);
-                p+=2;
+                p+=(ptrdiff_t) 2;
               }
             if (quantum == 1)
               SetPixelRed(image,ScaleCharToQuantum(*p++),q);
             else
               {
                 SetPixelRed(image,ScaleShortToQuantum(((*p) << 8) | *(p+1)),q);
-                p+=2;
+                p+=(ptrdiff_t) 2;
               }
             SetPixelGreen(image,0,q);
             SetPixelBlue(image,0,q);
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
             SetPixelGreen(image,0,q);
             SetPixelBlue(image,0,q);
             if (quantum == 1)
@@ -291,17 +292,17 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
               {
                 SetPixelBlue(chroma_image,ScaleShortToQuantum(((*p) << 8) |
                   *(p+1)),chroma_pixels);
-                p+=2;
+                p+=(ptrdiff_t) 2;
               }
             if (quantum == 1)
               SetPixelRed(image,ScaleCharToQuantum(*p++),q);
             else
               {
                 SetPixelRed(image,ScaleShortToQuantum(((*p) << 8) | *(p+1)),q);
-                p+=2;
+                p+=(ptrdiff_t) 2;
               }
-            chroma_pixels+=GetPixelChannels(chroma_image);
-            q+=GetPixelChannels(image);
+            chroma_pixels+=(ptrdiff_t) GetPixelChannels(chroma_image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
         }
       else
@@ -329,11 +330,11 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
             else
               {
                 SetPixelRed(image,ScaleShortToQuantum(((*p) << 8) | *(p+1)),q);
-                p+=2;
+                p+=(ptrdiff_t) 2;
               }
             SetPixelGreen(image,0,q);
             SetPixelBlue(image,0,q);
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
         }
       if (SyncAuthenticPixels(image,exception) == MagickFalse)
@@ -358,6 +359,7 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
         if (status == MagickFalse)
           {
             scanline=(unsigned char *) RelinquishMagickMemory(scanline); 
+            chroma_image=DestroyImage(chroma_image);
             image=DestroyImageList(image);
             return((Image *) NULL);
           }
@@ -389,10 +391,10 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
               {
                 SetPixelGreen(chroma_image,ScaleShortToQuantum(((*p) << 8) |
                   *(p+1)),q);
-                p+=2;
+                p+=(ptrdiff_t) 2;
               }
             SetPixelBlue(chroma_image,0,q);
-            q+=GetPixelChannels(chroma_image);
+            q+=(ptrdiff_t) GetPixelChannels(chroma_image);
           }
           if (SyncAuthenticPixels(chroma_image,exception) == MagickFalse)
             break;
@@ -406,6 +408,7 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
           if (status == MagickFalse)
             {
               scanline=(unsigned char *) RelinquishMagickMemory(scanline); 
+              chroma_image=DestroyImage(chroma_image);
               image=DestroyImageList(image);
               return((Image *) NULL);
             }
@@ -434,9 +437,9 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
             {
               SetPixelBlue(chroma_image,ScaleShortToQuantum(((*p) << 8) |
                 *(p+1)),q);
-              p+=2;
+              p+=(ptrdiff_t) 2;
             }
-          q+=GetPixelChannels(chroma_image);
+          q+=(ptrdiff_t) GetPixelChannels(chroma_image);
         }
         if (SyncAuthenticPixels(chroma_image,exception) == MagickFalse)
           break;
@@ -468,8 +471,8 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
       {
         SetPixelGreen(image,GetPixelGreen(resize_image,chroma_pixels),q);
         SetPixelBlue(image,GetPixelBlue(resize_image,chroma_pixels),q);
-        chroma_pixels+=GetPixelChannels(resize_image);
-        q+=GetPixelChannels(image);
+        chroma_pixels+=(ptrdiff_t) GetPixelChannels(resize_image);
+        q+=(ptrdiff_t) GetPixelChannels(image);
       }
       if (SyncAuthenticPixels(image,exception) == MagickFalse)
         break;
@@ -492,6 +495,8 @@ static Image *ReadYUVImage(const ImageInfo *image_info,ExceptionInfo *exception)
     if (image_info->number_scenes != 0)
       if (image->scene >= (image_info->scene+image_info->number_scenes-1))
         break;
+    if (image_info->interlace == PartitionInterlace)
+      break;
     if (interlace == NoInterlace)
       count=ReadBlob(image,(size_t) (2*quantum*image->columns),scanline);
     else
@@ -670,8 +675,8 @@ static MagickBooleanType WriteYUVImage(const ImageInfo *image_info,Image *image,
       vertical_factor=horizontal_factor;
       if ((flags & SigmaValue) != 0)
         vertical_factor=(ssize_t) geometry_info.sigma;
-      if ((horizontal_factor != 1) && (horizontal_factor != 2) &&
-          (vertical_factor != 1) && (vertical_factor != 2))
+      if (((horizontal_factor != 1) && (horizontal_factor != 2)) ||
+          ((vertical_factor != 1) && (vertical_factor != 2)))
         ThrowWriterException(CorruptImageError,"UnexpectedSamplingFactor");
     }
   if ((interlace == UndefinedInterlace) ||
@@ -722,6 +727,7 @@ static MagickBooleanType WriteYUVImage(const ImageInfo *image_info,Image *image,
       (size_t) ((ssize_t) height/vertical_factor),TriangleFilter,exception);
     if (chroma_image == (Image *) NULL)
       {
+        yuv_image=DestroyImage(yuv_image);
         (void) CloseBlob(image);
         return(MagickFalse);
       }
@@ -740,7 +746,7 @@ static MagickBooleanType WriteYUVImage(const ImageInfo *image_info,Image *image,
             exception);
           if (s == (const Quantum *) NULL)
             break;
-          for (x=0; x < (ssize_t) yuv_image->columns; x+=2)
+          for (x=0; x < (ssize_t) (yuv_image->columns-1); x+=2)
           {
             if (quantum == 1)
               {
@@ -748,7 +754,7 @@ static MagickBooleanType WriteYUVImage(const ImageInfo *image_info,Image *image,
                   GetPixelGreen(yuv_image,s)));
                 (void) WriteBlobByte(image,ScaleQuantumToChar(
                   GetPixelRed(yuv_image,p)));
-                p+=GetPixelChannels(yuv_image);
+                p+=(ptrdiff_t) GetPixelChannels(yuv_image);
                 (void) WriteBlobByte(image,ScaleQuantumToChar(
                   GetPixelBlue(yuv_image,s)));
                 (void) WriteBlobByte(image,ScaleQuantumToChar(
@@ -760,14 +766,14 @@ static MagickBooleanType WriteYUVImage(const ImageInfo *image_info,Image *image,
                   GetPixelGreen(yuv_image,s)));
                 (void) WriteBlobShort(image,ScaleQuantumToShort(
                   GetPixelRed(yuv_image,p)));
-                p+=GetPixelChannels(yuv_image);
+                p+=(ptrdiff_t) GetPixelChannels(yuv_image);
                 (void) WriteBlobByte(image,ScaleQuantumToChar(
                   GetPixelBlue(yuv_image,s)));
                 (void) WriteBlobShort(image,ScaleQuantumToShort(
                   GetPixelRed(yuv_image,p)));
               }
-            p+=GetPixelChannels(yuv_image);
-            s++;
+            p+=(ptrdiff_t) GetPixelChannels(yuv_image);
+            s+=(ptrdiff_t) GetPixelChannels(chroma_image);
           }
           if (image->previous == (Image *) NULL)
             {
@@ -797,7 +803,7 @@ static MagickBooleanType WriteYUVImage(const ImageInfo *image_info,Image *image,
             else
               (void) WriteBlobShort(image,ScaleQuantumToShort(
                 GetPixelRed(yuv_image,p)));
-            p+=GetPixelChannels(yuv_image);
+            p+=(ptrdiff_t) GetPixelChannels(yuv_image);
           }
           if (image->previous == (Image *) NULL)
             {
@@ -840,7 +846,7 @@ static MagickBooleanType WriteYUVImage(const ImageInfo *image_info,Image *image,
             else
               (void) WriteBlobShort(image,ScaleQuantumToShort(
                 GetPixelGreen(chroma_image,p)));
-            p+=GetPixelChannels(chroma_image);
+            p+=(ptrdiff_t) GetPixelChannels(chroma_image);
           }
         }
         if (image->previous == (Image *) NULL)
@@ -875,7 +881,7 @@ static MagickBooleanType WriteYUVImage(const ImageInfo *image_info,Image *image,
             else
               (void) WriteBlobShort(image,ScaleQuantumToShort(
                 GetPixelBlue(chroma_image,p)));
-            p+=GetPixelChannels(chroma_image);
+            p+=(ptrdiff_t) GetPixelChannels(chroma_image);
           }
         }
         if (image->previous == (Image *) NULL)
@@ -896,6 +902,8 @@ static MagickBooleanType WriteYUVImage(const ImageInfo *image_info,Image *image,
     if (status == MagickFalse)
       break;
   } while (image_info->adjoin != MagickFalse);
+  if (chroma_image != (Image *) NULL)
+    chroma_image=DestroyImage(chroma_image);
   if (CloseBlob(image) == MagickFalse)
     status=MagickFalse;
   return(status);

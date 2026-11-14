@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -164,6 +164,7 @@ static MagickBooleanType WriteUILImage(const ImageInfo *image_info,Image *image,
     basename[MagickPathExtent],
     buffer[MagickPathExtent],
     name[MagickPathExtent],
+    *sanitized_basename,
     *symbol;
 
   int
@@ -252,7 +253,7 @@ static MagickBooleanType WriteUILImage(const ImageInfo *image_info,Image *image,
               if (matte_image[i] != 0)
                 transparent=MagickTrue;
               i++;
-              p+=GetPixelChannels(image);
+              p+=(ptrdiff_t) GetPixelChannels(image);
             }
           }
         }
@@ -275,7 +276,7 @@ static MagickBooleanType WriteUILImage(const ImageInfo *image_info,Image *image,
               if (matte_image[i] != 0)
                 SetPixelIndex(image,(Quantum) image->colors,q);
               i++;
-              q+=GetPixelChannels(image);
+              q+=(ptrdiff_t) GetPixelChannels(image);
             }
           }
         }
@@ -294,8 +295,10 @@ static MagickBooleanType WriteUILImage(const ImageInfo *image_info,Image *image,
   symbol=AcquireString("");
   (void) WriteBlobString(image,"/* UIL */\n");
   GetPathComponent(image->filename,BasePath,basename);
+  sanitized_basename=SanitizeStringForIdentifier(basename);
   (void) FormatLocaleString(buffer,MagickPathExtent,
-    "value\n  %s_ct : color_table(\n",basename);
+    "value\n  %s_ct : color_table(\n",sanitized_basename);
+  sanitized_basename=DestroyString(sanitized_basename);
   (void) WriteBlobString(image,buffer);
   GetPixelInfo(image,&pixel);
   for (i=0; i < (ssize_t) colors; i++)
@@ -340,8 +343,11 @@ static MagickBooleanType WriteUILImage(const ImageInfo *image_info,Image *image,
     Define UIL pixels.
   */
   GetPathComponent(image->filename,BasePath,basename);
+  sanitized_basename=SanitizeStringForIdentifier(basename);
   (void) FormatLocaleString(buffer,MagickPathExtent,
-    "  %s_icon : icon(color_table = %s_ct,\n",basename,basename);
+    "  %s_icon : icon(color_table = %s_ct,\n",sanitized_basename,
+    sanitized_basename);
+  sanitized_basename=DestroyString(sanitized_basename);
   (void) WriteBlobString(image,buffer);
   for (y=0; y < (ssize_t) image->rows; y++)
   {
@@ -352,17 +358,20 @@ static MagickBooleanType WriteUILImage(const ImageInfo *image_info,Image *image,
     for (x=0; x < (ssize_t) image->columns; x++)
     {
       k=((ssize_t) GetPixelIndex(image,p) % MaxCixels);
+      if (k < 0)
+        k=0;
       symbol[0]=Cixel[k];
       for (j=1; j < (int) characters_per_pixel; j++)
       {
-        k=(((int) GetPixelIndex(image,p)-k)/MaxCixels) %
-          MaxCixels;
+        k=(((int) GetPixelIndex(image,p)-k)/MaxCixels) % MaxCixels;
+        if (k < 0)
+          k=0;
         symbol[j]=Cixel[k];
       }
       symbol[j]='\0';
       (void) CopyMagickString(buffer,symbol,MagickPathExtent);
       (void) WriteBlobString(image,buffer);
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     (void) FormatLocaleString(buffer,MagickPathExtent,"\"%s\n",
       (y == (ssize_t) (image->rows-1) ? ");" : ","));

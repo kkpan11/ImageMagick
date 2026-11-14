@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -89,6 +89,7 @@
 #include "MagickCore/memory_.h"
 #include "MagickCore/memory-private.h"
 #include "MagickCore/policy.h"
+#include "MagickCore/policy-private.h"
 #include "MagickCore/resource_.h"
 #include "MagickCore/semaphore.h"
 #include "MagickCore/string_.h"
@@ -202,35 +203,12 @@ static size_t
   max_profile_size = 0,
   virtual_anonymous_memory = 0;
 
-#if defined _MSC_VER
-static void *MSCMalloc(size_t size)
-{
-  return(malloc(size));
-}
-
-static void *MSCRealloc(void* ptr, size_t size)
-{
-  return(realloc(ptr,size));
-}
-
-static void MSCFree(void* ptr)
-{
-  free(ptr);
-}
-#endif
-
 static MagickMemoryMethods
   memory_methods =
   {
-#if defined _MSC_VER
-    (AcquireMemoryHandler) MSCMalloc,
-    (ResizeMemoryHandler) MSCRealloc,
-    (DestroyMemoryHandler) MSCFree,
-#else
     (AcquireMemoryHandler) malloc,
     (ResizeMemoryHandler) realloc,
     (DestroyMemoryHandler) free,
-#endif
     (AcquireAlignedMemoryHandler) NULL,
     (RelinquishAlignedMemoryHandler) NULL
   };
@@ -368,7 +346,8 @@ MagickExport void *AcquireAlignedMemory(const size_t count,const size_t quantum)
   size_t
     size;
 
-  if (HeapOverflowSanityCheckGetSize(count,quantum,&size) != MagickFalse)
+  if ((HeapOverflowSanityCheckGetSize(count,quantum,&size) != MagickFalse) ||
+      (size > GetMaxMemoryRequest()))
     {
       errno=ENOMEM;
       return(NULL);
@@ -626,6 +605,13 @@ MagickExport void *AcquireMagickMemory(const size_t size)
 */
 MagickExport void *AcquireCriticalMemory(const size_t size)
 {
+#if !defined(STDERR_FILENO)
+#define STDERR_FILENO 2
+#endif
+
+  static const char fatal_message[] =
+    "ImageMagick: fatal error: unable to acquire critical memory\n";
+
   void
     *memory;
 
@@ -633,9 +619,11 @@ MagickExport void *AcquireCriticalMemory(const size_t size)
     Fail if memory request cannot be fulfilled.
   */
   memory=AcquireMagickMemory(size);
-  if (memory == (void *) NULL)
-    ThrowFatalException(ResourceLimitFatalError,"MemoryAllocationFailed");
-  return(memory);
+  if (memory != (void *) NULL)
+    return(memory);
+  (void) MagickWrite(STDERR_FILENO,fatal_message,sizeof(fatal_message)-1);
+  MagickCoreTerminus();
+  _exit(EXIT_FAILURE);
 }
 
 /*
@@ -791,7 +779,7 @@ MagickExport MemoryInfo *AcquireVirtualMemory(const size_t count,
                       *memory_info->filename='\0';
                     }
                 }
-              (void) close(file);
+              (void) close_utf8(file);
             }
         }
     }
@@ -1042,29 +1030,43 @@ MagickExport void GetMagickMemoryMethods(
 %      size_t GetMaxMemoryRequest(void)
 %
 */
-MagickExport size_t GetMaxMemoryRequest(void)
+static size_t GetMaxMemoryRequestFromPolicy(void)
 {
 #define MinMemoryRequest "16MiB"
 
+  char
+    *value;
+
+  size_t
+    max_memory = (size_t) MAGICK_SSIZE_MAX;
+
+  value=GetPolicyValue("system:max-memory-request");
+  if (value != (char *) NULL)
+    {
+      /*
+        The security policy sets a max memory request limit.
+      */
+      max_memory=MagickMax(StringToSizeType(value,100.0),StringToSizeType(
+        MinMemoryRequest,100.0));
+      value=DestroyString(value);
+    }
+  return(MagickMin(max_memory,(size_t) MAGICK_SSIZE_MAX));
+}
+
+MagickExport size_t GetMaxMemoryRequest(void)
+{
   if (max_memory_request == 0)
     {
-      char
-        *value;
-
+      /*
+        Setting this to unlimited before we check the policy value to avoid
+        recursive calls to GetMaxMemoryRequestFromPolicy()
+      */
       max_memory_request=(size_t) MAGICK_SSIZE_MAX;
-      value=GetPolicyValue("system:max-memory-request");
-      if (value != (char *) NULL)
-        {
-          /*
-            The security policy sets a max memory request limit.
-          */
-          max_memory_request=MagickMax(StringToSizeType(value,100.0),
-            StringToSizeType(MinMemoryRequest,100.0));
-          value=DestroyString(value);
-        }
-    }
-  return(MagickMin(max_memory_request,(size_t) MAGICK_SSIZE_MAX));
+      max_memory_request=GetMaxMemoryRequestFromPolicy();
+    } 
+  return(max_memory_request);
 }
+
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %
@@ -1083,25 +1085,31 @@ MagickExport size_t GetMaxMemoryRequest(void)
 %      size_t GetMaxProfileSize(void)
 %
 */
+static size_t GetMaxProfileSizeFromPolicy(void)
+{
+  char
+    *value;
+
+  size_t
+    max=(size_t) MAGICK_SSIZE_MAX;
+
+  value=GetPolicyValue("system:max-profile-size");
+  if (value != (char *) NULL)
+    {
+      /*
+        The security policy sets a max profile size limit.
+      */
+      max=StringToSizeType(value,100.0);
+      value=DestroyString(value);
+    }
+  return(MagickMin(max,(size_t) MAGICK_SSIZE_MAX));
+}
+
 MagickExport size_t GetMaxProfileSize(void)
 {
   if (max_profile_size == 0)
-    {
-      char
-        *value;
-
-      max_profile_size=(size_t) MAGICK_SSIZE_MAX;
-      value=GetPolicyValue("system:max-profile-size");
-      if (value != (char *) NULL)
-        {
-          /*
-            The security policy sets a max profile size limit.
-          */
-          max_profile_size=StringToSizeType(value,100.0);
-          value=DestroyString(value);
-        }
-    }
-  return(MagickMin(max_profile_size,(size_t) MAGICK_SSIZE_MAX));
+    max_profile_size=GetMaxProfileSizeFromPolicy();
+  return(max_profile_size);
 }
 
 /*
@@ -1347,29 +1355,6 @@ MagickExport void *ResetMagickMemory(void *memory,int c,const size_t size)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-+   R e s e t M a x M e m o r y R e q u e s t                                 %
-%                                                                             %
-%                                                                             %
-%                                                                             %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%  ResetMaxMemoryRequest() resets the max_memory_request value.
-%
-%  The format of the ResetMaxMemoryRequest method is:
-%
-%      void ResetMaxMemoryRequest(void)
-%
-*/
-MagickPrivate void ResetMaxMemoryRequest(void)
-{
-  max_memory_request=0;
-}
-
-/*
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%                                                                             %
-%                                                                             %
-%                                                                             %
 +   R e s e t V i r t u a l A n o n y m o u s M e m o r y                     %
 %                                                                             %
 %                                                                             %
@@ -1527,7 +1512,7 @@ MagickExport void *ResizeQuantumMemory(void *memory,const size_t count,
 %
 %  The format of the SetMagickAlignedMemoryMethods() method is:
 %
-%      SetMagickAlignedMemoryMethods(
+%      void SetMagickAlignedMemoryMethods(
 %        AcquireAlignedMemoryHandler acquire_aligned_memory_handler,
 %        RelinquishAlignedMemoryHandler relinquish_aligned_memory_handler)
 %
@@ -1564,7 +1549,7 @@ MagickExport void SetMagickAlignedMemoryMethods(
 %
 %  The format of the SetMagickMemoryMethods() method is:
 %
-%      SetMagickMemoryMethods(AcquireMemoryHandler acquire_memory_handler,
+%      void SetMagickMemoryMethods(AcquireMemoryHandler acquire_memory_handler,
 %        ResizeMemoryHandler resize_memory_handler,
 %        DestroyMemoryHandler destroy_memory_handler)
 %
@@ -1617,7 +1602,7 @@ MagickExport void SetMagickMemoryMethods(
 */
 MagickPrivate void SetMaxMemoryRequest(const MagickSizeType limit)
 {
-  max_memory_request=MagickMin(limit,GetMaxMemoryRequest());
+  max_memory_request=(size_t) MagickMin(limit,GetMaxMemoryRequestFromPolicy());
 }
 
 /*
@@ -1644,7 +1629,7 @@ MagickPrivate void SetMaxMemoryRequest(const MagickSizeType limit)
 */
 MagickPrivate void SetMaxProfileSize(const MagickSizeType limit)
 {
-  max_profile_size=MagickMin(limit,GetMaxProfileSize());
+  max_profile_size=(size_t) MagickMin(limit,GetMaxProfileSizeFromPolicy());
 }
 
 /*
@@ -1694,24 +1679,7 @@ MagickPrivate MagickBooleanType ShredMagickMemory(void *memory,
   if ((memory == NULL) || (length == 0))
     return(MagickFalse);
   if (passes == -1)
-    {
-      char
-        *property;
-
-      passes=0;
-      property=GetEnvironmentValue("MAGICK_SHRED_PASSES");
-      if (property != (char *) NULL)
-        {
-          passes=(ssize_t) StringToInteger(property);
-          property=DestroyString(property);
-        }
-      property=GetPolicyValue("system:shred");
-      if (property != (char *) NULL)
-        {
-          passes=(ssize_t) StringToInteger(property);
-          property=DestroyString(property);
-        }
-    }
+    passes=GetShredPasses();
   if (passes == 0)
     return(MagickTrue);
   /*
@@ -1734,7 +1702,7 @@ MagickPrivate MagickBooleanType ShredMagickMemory(void *memory,
         SetRandomKey(random_info,quantum,GetStringInfoDatum(key));
       (void) memcpy(p,GetStringInfoDatum(key),(size_t)
         MagickMin(quantum,length-j));
-      p+=quantum;
+      p+=(ptrdiff_t) quantum;
     }
     if (j < length)
       break;

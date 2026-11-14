@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -181,6 +181,9 @@ static Image *ReadWBMPImage(const ImageInfo *image_info,
       (void) CloseBlob(image);
       return(GetFirstImageInList(image));
     }
+  if ((image->columns > GetBlobSize(image)) ||
+      (image->rows > GetBlobSize(image)))
+    ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
   status=SetImageExtent(image,image->columns,image->rows,exception);
   if (status == MagickFalse)
     return(DestroyImageList(image));
@@ -205,11 +208,11 @@ static Image *ReadWBMPImage(const ImageInfo *image_info,
           if (byte == EOF)
             ThrowReaderException(CorruptImageError,"CorruptImage");
         }
-      SetPixelIndex(image,(byte & (0x01 << (7-bit))) ? 1 : 0,q);
+      SetPixelIndex(image,(Quantum) ((byte & (0x01 << (7-bit))) ? 1 : 0),q);
       bit++;
       if (bit == 8)
         bit=0;
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;
@@ -344,7 +347,7 @@ static void WBMPWriteInteger(Image *image,const size_t value)
     if ((flag == 0) && (octet != 0))
       {
         flag=MagickTrue;
-        n=i+1;
+        n=(int) (i+1);
       }
     buffer[4-i]=octet | (i && (flag || octet))*(0x01 << 7);
     bits-=7;
@@ -412,7 +415,7 @@ static MagickBooleanType WriteWBMPImage(const ImageInfo *image_info,
           bit=0;
           byte=0;
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (bit != 0)
       (void) WriteBlobByte(image,byte);

@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -76,6 +76,12 @@ static void
 */
 static ssize_t
   date_precision = -1;
+
+static time_t
+  magick_epoch = (time_t) 0;
+
+static MagickBooleanType
+  epoch_initialized = MagickFalse;
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -199,7 +205,9 @@ MagickExport TimerInfo *DestroyTimerInfo(TimerInfo *timer_info)
 */
 static double ElapsedTime(void)
 {
-#if defined(MAGICKCORE_HAVE_CLOCK_GETTIME)
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+  return(1.0);  /* Deterministic for fuzzing */
+#elif defined(MAGICKCORE_HAVE_CLOCK_GETTIME)
 #define NANOSECONDS_PER_SECOND  1000000000.0
 #if defined(CLOCK_HIGHRES)
 #  define CLOCK_ID CLOCK_HIGHRES
@@ -347,20 +355,14 @@ MagickExport double GetElapsedTime(TimerInfo *time_info)
 %      time_t GetElapsedTime(void)
 %
 */
-MagickExport time_t GetMagickTime(void)
+static void InitializeEpoch(void)
 {
-  static time_t
-    magick_epoch = (time_t) 0;
-
-  static MagickBooleanType
-    epoch_initialized = MagickFalse;
-
   if (epoch_initialized == MagickFalse)
     {
-      const char
+      char
         *source_date_epoch;
 
-      source_date_epoch=getenv("SOURCE_DATE_EPOCH");
+      source_date_epoch=GetEnvironmentValue("SOURCE_DATE_EPOCH");
       if (source_date_epoch != (const char *) NULL)
         {
           time_t
@@ -369,12 +371,22 @@ MagickExport time_t GetMagickTime(void)
           epoch=(time_t) StringToMagickOffsetType(source_date_epoch,100.0);
           if ((epoch > 0) && (epoch <= time((time_t *) NULL)))
             magick_epoch=epoch;
+          source_date_epoch=DestroyString(source_date_epoch);
         }
       epoch_initialized=MagickTrue;
     }
+}
+
+MagickExport time_t GetMagickTime(void)
+{
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+  return((time_t) 1234567890);  /* Deterministic for fuzzing */
+#else
+  InitializeEpoch();
   if (magick_epoch != 0)
     return(magick_epoch);
   return(time((time_t *) NULL));
+#endif
 }
 
 /*
@@ -444,6 +456,33 @@ MagickExport double GetUserTime(TimerInfo *time_info)
   if (time_info->state == RunningTimerState)
     StopTimer(time_info);
   return(time_info->user.total);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
++   I s S o u r c e D a t a E p o c h S e t                                   %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  IsSourceDataEpochSet() returns true when the SOURCE_DATE_EPOCH environment
+%  variable is set. This variable is used to set the epoch time for the
+%  GetMagickTime() method. If the variable is not set, then the current time is
+%  returned.
+%
+%  The format of the IsSourceDataEpochSet method is:
+%
+%      MagickBooleanType IsSourceDataEpochSet(void)
+%
+*/
+MagickExport MagickBooleanType IsSourceDataEpochSet(void)
+{
+  InitializeEpoch();
+  return(magick_epoch != 0 ? MagickTrue : MagickFalse);
 }
 
 /*

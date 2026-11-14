@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -169,7 +169,7 @@ static Image *ReadHRZImage(const ImageInfo *image_info,ExceptionInfo *exception)
       SetPixelGreen(image,ScaleCharToQuantum(4**p++),q);
       SetPixelBlue(image,ScaleCharToQuantum(4**p++),q);
       SetPixelAlpha(image,OpaqueAlpha,q);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;
@@ -336,11 +336,14 @@ static MagickBooleanType WriteHRZImage(const ImageInfo *image_info,Image *image,
       *q++=ScaleQuantumToChar(GetPixelRed(hrz_image,p))/4;
       *q++=ScaleQuantumToChar(GetPixelGreen(hrz_image,p))/4;
       *q++=ScaleQuantumToChar(GetPixelBlue(hrz_image,p))/4;
-      p+=GetPixelChannels(hrz_image);
+      p+=(ptrdiff_t) GetPixelChannels(hrz_image);
     }
     count=WriteBlob(image,(size_t) (q-pixels),pixels);
     if (count != (ssize_t) (q-pixels))
-      break;
+      {
+        status=MagickFalse;
+        break;
+      }
     status=SetImageProgress(image,SaveImageTag,y,hrz_image->rows);
     if (status == MagickFalse)
       break;

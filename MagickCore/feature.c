@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -94,6 +94,7 @@
 #include "MagickCore/thread-private.h"
 #include "MagickCore/timer.h"
 #include "MagickCore/utility.h"
+#include "MagickCore/utility-private.h"
 #include "MagickCore/version.h"
 
 /*
@@ -285,7 +286,7 @@ MagickExport Image *CannyEdgeImage(const Image *image,const double radius,
     Filter out noise.
   */
   (void) FormatLocaleString(geometry,MagickPathExtent,
-    "blur:%.20gx%.20g;blur:%.20gx%.20g+90",radius,sigma,radius,sigma);
+    "blur:%.17gx%.17g;blur:%.17gx%.17g+90",radius,sigma,radius,sigma);
   kernel_info=AcquireKernelInfo(geometry,exception);
   if (kernel_info == (KernelInfo *) NULL)
     ThrowImageException(ResourceLimitError,"MemoryAllocationFailed");
@@ -410,7 +411,7 @@ MagickExport Image *CannyEdgeImage(const Image *image,const double radius,
         }
       if (SetMatrixElement(canny_cache,x,y,&pixel) == MagickFalse)
         continue;
-      p+=GetPixelChannels(edge_image);
+      p+=(ptrdiff_t) GetPixelChannels(edge_image);
     }
   }
   edge_view=DestroyCacheView(edge_view);
@@ -506,8 +507,8 @@ MagickExport Image *CannyEdgeImage(const Image *image,const double radius,
         if (pixel.intensity > max)
           max=pixel.intensity;
       }
-      *q=0;
-      q+=GetPixelChannels(edge_image);
+      *q=(Quantum) 0;
+      q+=(ptrdiff_t) GetPixelChannels(edge_image);
     }
     if (SyncCacheViewAuthenticPixels(edge_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -671,7 +672,11 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
   channel_features=(ChannelFeatures *) AcquireQuantumMemory(length,
     sizeof(*channel_features));
   if (channel_features == (ChannelFeatures *) NULL)
-    ThrowFatalException(ResourceLimitFatalError,"MemoryAllocationFailed");
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),
+        ResourceLimitError,"MemoryAllocationFailed","`%s'",image->filename);
+      return(channel_features);
+    }
   (void) memset(channel_features,0,length*
     sizeof(*channel_features));
   /*
@@ -730,7 +735,7 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
       if (image->alpha_trait != UndefinedPixelTrait)
         grays[ScaleQuantumToMap(GetPixelAlpha(image,p))].alpha=
           ScaleQuantumToMap(GetPixelAlpha(image,p));
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
   }
   image_view=DestroyCacheView(image_view);
@@ -789,11 +794,7 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
       (sum == (ChannelStatistics *) NULL))
     {
       if (Q != (ChannelStatistics **) NULL)
-        {
-          for (i=0; i < (ssize_t) number_grays; i++)
-            Q[i]=(ChannelStatistics *) RelinquishMagickMemory(Q[i]);
-          Q=(ChannelStatistics **) RelinquishMagickMemory(Q);
-        }
+        Q=(ChannelStatistics **) RelinquishMagickMemory(Q);
       if (sum != (ChannelStatistics *) NULL)
         sum=(ChannelStatistics *) RelinquishMagickMemory(sum);
       if (density_y != (ChannelStatistics *) NULL)
@@ -803,13 +804,8 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
       if (density_x != (ChannelStatistics *) NULL)
         density_x=(ChannelStatistics *) RelinquishMagickMemory(density_x);
       if (cooccurrence != (ChannelStatistics **) NULL)
-        {
-          for (i=0; i < (ssize_t) number_grays; i++)
-            cooccurrence[i]=(ChannelStatistics *)
-              RelinquishMagickMemory(cooccurrence[i]);
-          cooccurrence=(ChannelStatistics **) RelinquishMagickMemory(
-            cooccurrence);
-        }
+        cooccurrence=(ChannelStatistics **) RelinquishMagickMemory(
+          cooccurrence);
       grays=(PixelPacket *) RelinquishMagickMemory(grays);
       channel_features=(ChannelFeatures *) RelinquishMagickMemory(
         channel_features);
@@ -893,7 +889,7 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
         status=MagickFalse;
         continue;
       }
-    p+=distance*GetPixelChannels(image);;
+    p+=(ptrdiff_t) distance*GetPixelChannels(image);;
     for (x=0; x < (ssize_t) image->columns; x++)
     {
       for (i=0; i < 4; i++)
@@ -981,7 +977,7 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
             cooccurrence[v][u].direction[i].alpha++;
           }
       }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
   }
   grays=(PixelPacket *) RelinquishMagickMemory(grays);
@@ -1045,7 +1041,7 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
         break;
       }
     }
-    normalize=PerceptibleReciprocal(normalize);
+    normalize=MagickSafeReciprocal(normalize);
     for (y=0; y < (ssize_t) number_grays; y++)
     {
       ssize_t
@@ -1158,21 +1154,21 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
         */
         channel_features[RedPixelChannel].entropy[i]-=
           cooccurrence[x][y].direction[i].red*
-          MagickLog10(cooccurrence[x][y].direction[i].red);
+          log2(cooccurrence[x][y].direction[i].red);
         channel_features[GreenPixelChannel].entropy[i]-=
           cooccurrence[x][y].direction[i].green*
-          MagickLog10(cooccurrence[x][y].direction[i].green);
+          log2(cooccurrence[x][y].direction[i].green);
         channel_features[BluePixelChannel].entropy[i]-=
           cooccurrence[x][y].direction[i].blue*
-          MagickLog10(cooccurrence[x][y].direction[i].blue);
+          log2(cooccurrence[x][y].direction[i].blue);
         if (image->colorspace == CMYKColorspace)
           channel_features[BlackPixelChannel].entropy[i]-=
             cooccurrence[x][y].direction[i].black*
-            MagickLog10(cooccurrence[x][y].direction[i].black);
+            log2(cooccurrence[x][y].direction[i].black);
         if (image->alpha_trait != UndefinedPixelTrait)
           channel_features[AlphaPixelChannel].entropy[i]-=
             cooccurrence[x][y].direction[i].alpha*
-            MagickLog10(cooccurrence[x][y].direction[i].alpha);
+            log2(cooccurrence[x][y].direction[i].alpha);
         /*
           Information Measures of Correlation.
         */
@@ -1282,21 +1278,21 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
       */
       channel_features[RedPixelChannel].sum_entropy[i]-=
         density_xy[x].direction[i].red*
-        MagickLog10(density_xy[x].direction[i].red);
+        log2(density_xy[x].direction[i].red);
       channel_features[GreenPixelChannel].sum_entropy[i]-=
         density_xy[x].direction[i].green*
-        MagickLog10(density_xy[x].direction[i].green);
+        log2(density_xy[x].direction[i].green);
       channel_features[BluePixelChannel].sum_entropy[i]-=
         density_xy[x].direction[i].blue*
-        MagickLog10(density_xy[x].direction[i].blue);
+        log2(density_xy[x].direction[i].blue);
       if (image->colorspace == CMYKColorspace)
         channel_features[BlackPixelChannel].sum_entropy[i]-=
           density_xy[x].direction[i].black*
-          MagickLog10(density_xy[x].direction[i].black);
+          log2(density_xy[x].direction[i].black);
       if (image->alpha_trait != UndefinedPixelTrait)
         channel_features[AlphaPixelChannel].sum_entropy[i]-=
           density_xy[x].direction[i].alpha*
-          MagickLog10(density_xy[x].direction[i].alpha);
+          log2(density_xy[x].direction[i].alpha);
       /*
         Sum variance.
       */
@@ -1378,49 +1374,49 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
           Information Measures of Correlation.
         */
         entropy_xy.direction[i].red-=cooccurrence[x][y].direction[i].red*
-          MagickLog10(cooccurrence[x][y].direction[i].red);
+          log2(cooccurrence[x][y].direction[i].red);
         entropy_xy.direction[i].green-=cooccurrence[x][y].direction[i].green*
-          MagickLog10(cooccurrence[x][y].direction[i].green);
+          log2(cooccurrence[x][y].direction[i].green);
         entropy_xy.direction[i].blue-=cooccurrence[x][y].direction[i].blue*
-          MagickLog10(cooccurrence[x][y].direction[i].blue);
+          log2(cooccurrence[x][y].direction[i].blue);
         if (image->colorspace == CMYKColorspace)
           entropy_xy.direction[i].black-=cooccurrence[x][y].direction[i].black*
-            MagickLog10(cooccurrence[x][y].direction[i].black);
+            log2(cooccurrence[x][y].direction[i].black);
         if (image->alpha_trait != UndefinedPixelTrait)
           entropy_xy.direction[i].alpha-=
-            cooccurrence[x][y].direction[i].alpha*MagickLog10(
+            cooccurrence[x][y].direction[i].alpha*log2(
             cooccurrence[x][y].direction[i].alpha);
         entropy_xy1.direction[i].red-=(cooccurrence[x][y].direction[i].red*
-          MagickLog10(density_x[x].direction[i].red*density_y[y].direction[i].red));
+          log2(density_x[x].direction[i].red*density_y[y].direction[i].red));
         entropy_xy1.direction[i].green-=(cooccurrence[x][y].direction[i].green*
-          MagickLog10(density_x[x].direction[i].green*
+          log2(density_x[x].direction[i].green*
           density_y[y].direction[i].green));
         entropy_xy1.direction[i].blue-=(cooccurrence[x][y].direction[i].blue*
-          MagickLog10(density_x[x].direction[i].blue*density_y[y].direction[i].blue));
+          log2(density_x[x].direction[i].blue*density_y[y].direction[i].blue));
         if (image->colorspace == CMYKColorspace)
           entropy_xy1.direction[i].black-=(
-            cooccurrence[x][y].direction[i].black*MagickLog10(
+            cooccurrence[x][y].direction[i].black*log2(
             density_x[x].direction[i].black*density_y[y].direction[i].black));
         if (image->alpha_trait != UndefinedPixelTrait)
           entropy_xy1.direction[i].alpha-=(
-            cooccurrence[x][y].direction[i].alpha*MagickLog10(
+            cooccurrence[x][y].direction[i].alpha*log2(
             density_x[x].direction[i].alpha*density_y[y].direction[i].alpha));
         entropy_xy2.direction[i].red-=(density_x[x].direction[i].red*
-          density_y[y].direction[i].red*MagickLog10(density_x[x].direction[i].red*
+          density_y[y].direction[i].red*log2(density_x[x].direction[i].red*
           density_y[y].direction[i].red));
         entropy_xy2.direction[i].green-=(density_x[x].direction[i].green*
-          density_y[y].direction[i].green*MagickLog10(density_x[x].direction[i].green*
+          density_y[y].direction[i].green*log2(density_x[x].direction[i].green*
           density_y[y].direction[i].green));
         entropy_xy2.direction[i].blue-=(density_x[x].direction[i].blue*
-          density_y[y].direction[i].blue*MagickLog10(density_x[x].direction[i].blue*
+          density_y[y].direction[i].blue*log2(density_x[x].direction[i].blue*
           density_y[y].direction[i].blue));
         if (image->colorspace == CMYKColorspace)
           entropy_xy2.direction[i].black-=(density_x[x].direction[i].black*
-            density_y[y].direction[i].black*MagickLog10(
+            density_y[y].direction[i].black*log2(
             density_x[x].direction[i].black*density_y[y].direction[i].black));
         if (image->alpha_trait != UndefinedPixelTrait)
           entropy_xy2.direction[i].alpha-=(density_x[x].direction[i].alpha*
-            density_y[y].direction[i].alpha*MagickLog10(
+            density_y[y].direction[i].alpha*log2(
             density_x[x].direction[i].alpha*density_y[y].direction[i].alpha));
       }
     }
@@ -1480,48 +1476,48 @@ MagickExport ChannelFeatures *GetImageFeatures(const Image *image,
       */
       channel_features[RedPixelChannel].difference_entropy[i]-=
         density_xy[x].direction[i].red*
-        MagickLog10(density_xy[x].direction[i].red);
+        log2(density_xy[x].direction[i].red);
       channel_features[GreenPixelChannel].difference_entropy[i]-=
         density_xy[x].direction[i].green*
-        MagickLog10(density_xy[x].direction[i].green);
+        log2(density_xy[x].direction[i].green);
       channel_features[BluePixelChannel].difference_entropy[i]-=
         density_xy[x].direction[i].blue*
-        MagickLog10(density_xy[x].direction[i].blue);
+        log2(density_xy[x].direction[i].blue);
       if (image->colorspace == CMYKColorspace)
         channel_features[BlackPixelChannel].difference_entropy[i]-=
           density_xy[x].direction[i].black*
-          MagickLog10(density_xy[x].direction[i].black);
+          log2(density_xy[x].direction[i].black);
       if (image->alpha_trait != UndefinedPixelTrait)
         channel_features[AlphaPixelChannel].difference_entropy[i]-=
           density_xy[x].direction[i].alpha*
-          MagickLog10(density_xy[x].direction[i].alpha);
+          log2(density_xy[x].direction[i].alpha);
       /*
         Information Measures of Correlation.
       */
       entropy_x.direction[i].red-=(density_x[x].direction[i].red*
-        MagickLog10(density_x[x].direction[i].red));
+        log2(density_x[x].direction[i].red));
       entropy_x.direction[i].green-=(density_x[x].direction[i].green*
-        MagickLog10(density_x[x].direction[i].green));
+        log2(density_x[x].direction[i].green));
       entropy_x.direction[i].blue-=(density_x[x].direction[i].blue*
-        MagickLog10(density_x[x].direction[i].blue));
+        log2(density_x[x].direction[i].blue));
       if (image->colorspace == CMYKColorspace)
         entropy_x.direction[i].black-=(density_x[x].direction[i].black*
-          MagickLog10(density_x[x].direction[i].black));
+          log2(density_x[x].direction[i].black));
       if (image->alpha_trait != UndefinedPixelTrait)
         entropy_x.direction[i].alpha-=(density_x[x].direction[i].alpha*
-          MagickLog10(density_x[x].direction[i].alpha));
+          log2(density_x[x].direction[i].alpha));
       entropy_y.direction[i].red-=(density_y[x].direction[i].red*
-        MagickLog10(density_y[x].direction[i].red));
+        log2(density_y[x].direction[i].red));
       entropy_y.direction[i].green-=(density_y[x].direction[i].green*
-        MagickLog10(density_y[x].direction[i].green));
+        log2(density_y[x].direction[i].green));
       entropy_y.direction[i].blue-=(density_y[x].direction[i].blue*
-        MagickLog10(density_y[x].direction[i].blue));
+        log2(density_y[x].direction[i].blue));
       if (image->colorspace == CMYKColorspace)
         entropy_y.direction[i].black-=(density_y[x].direction[i].black*
-          MagickLog10(density_y[x].direction[i].black));
+          log2(density_y[x].direction[i].black));
       if (image->alpha_trait != UndefinedPixelTrait)
         entropy_y.direction[i].alpha-=(density_y[x].direction[i].alpha*
-          MagickLog10(density_y[x].direction[i].alpha));
+          log2(density_y[x].direction[i].alpha));
     }
     /*
       Difference variance.
@@ -1795,13 +1791,14 @@ static Image *RenderHoughLines(const ImageInfo *image_info,const size_t columns,
     DefaultResolution;
   draw_info->affine.sy=image->resolution.y == 0.0 ? 1.0 : image->resolution.y/
     DefaultResolution;
-  image->columns=(size_t) (draw_info->affine.sx*image->columns);
-  image->rows=(size_t) (draw_info->affine.sy*image->rows);
+  image->columns=CastDoubleToSizeT(draw_info->affine.sx*image->columns);
+  image->rows=CastDoubleToSizeT(draw_info->affine.sy*image->rows);
   status=SetImageExtent(image,image->columns,image->rows,exception);
   if (status == MagickFalse)
     return(DestroyImageList(image));
   if (SetImageBackgroundColor(image,exception) == MagickFalse)
     {
+      draw_info=DestroyDrawInfo(draw_info);
       image=DestroyImageList(image);
       return((Image *) NULL);
     }
@@ -1943,7 +1940,7 @@ MagickExport Image *HoughLineImage(const Image *image,const size_t width,
               MagickRound(radius+hough_height),&count);
           }
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (image->progress_monitor != (MagickProgressMonitor) NULL)
       {
@@ -1975,12 +1972,12 @@ MagickExport Image *HoughLineImage(const Image *image,const size_t width,
       return((Image *) NULL);
     }
   (void) FormatLocaleString(message,MagickPathExtent,
-    "# Hough line transform: %.20gx%.20g%+.20g\n",(double) width,
+    "# Hough line transform: %.17gx%.17g%+.20g\n",(double) width,
     (double) height,(double) threshold);
   if (write(file,message,strlen(message)) != (ssize_t) strlen(message))
     status=MagickFalse;
   (void) FormatLocaleString(message,MagickPathExtent,
-    "viewbox 0 0 %.20g %.20g\n",(double) image->columns,(double) image->rows);
+    "viewbox 0 0 %.17g %.17g\n",(double) image->columns,(double) image->rows);
   if (write(file,message,strlen(message)) != (ssize_t) strlen(message))
     status=MagickFalse;
   (void) FormatLocaleString(message,MagickPathExtent,
@@ -2075,7 +2072,7 @@ MagickExport Image *HoughLineImage(const Image *image,const size_t width,
         }
     }
   }
-  (void) close(file);
+  (void) close_utf8(file);
   /*
     Render lines to image canvas.
   */
@@ -2293,7 +2290,7 @@ MagickExport Image *MeanShiftImage(const Image *image,const size_t width,
           }
         }
         if (count != 0)
-          gamma=PerceptibleReciprocal((double) count);
+          gamma=MagickSafeReciprocal((double) count);
         mean_location.x=gamma*sum_location.x;
         mean_location.y=gamma*sum_location.y;
         mean_pixel.red=gamma*sum_pixel.red;
@@ -2317,8 +2314,8 @@ MagickExport Image *MeanShiftImage(const Image *image,const size_t width,
       SetPixelGreen(mean_image,ClampToQuantum(mean_pixel.green),q);
       SetPixelBlue(mean_image,ClampToQuantum(mean_pixel.blue),q);
       SetPixelAlpha(mean_image,ClampToQuantum(mean_pixel.alpha),q);
-      p+=GetPixelChannels(image);
-      q+=GetPixelChannels(mean_image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(mean_image);
     }
     if (SyncCacheViewAuthenticPixels(mean_view,exception) == MagickFalse)
       status=MagickFalse;

@@ -1,15 +1,24 @@
 on:
   workflow_dispatch:
-  schedule:
-  - cron: 0 6 * * *
+  push:
+    branches:
+    - main
+    tags:
+    - '!*'
+  pull_request:
+    branches:
+    - main
 
-name: codeql analysis
+permissions: {}
+
+name: Codeql analysis
 jobs:
-  scan_linux:
-    name: 'Linux Q${{matrix.quantum}}-x64 hdri=${{matrix.hdri}} (${{matrix.modules}})'
-    runs-on: ubuntu-latest
+  c_cpp:
+    name: Linux Q${{matrix.quantum}}-x64 hdri=${{matrix.hdri}} (${{matrix.modules}})
+    runs-on: ubuntu-24.04
 
     permissions:
+      contents: read
       security-events: write
 
     strategy:
@@ -20,24 +29,53 @@ jobs:
         modules: [ 'with-modules', 'without-modules' ]
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          persist-credentials: false
 
-    - name: Configure ImageMagick
-      run: |
-        export CFLAGS="-Wno-deprecated-declarations"
-        ./configure --with-quantum-depth=${{matrix.quantum}} --enable-hdri=${{matrix.hdri}} --${{matrix.modules}}
-        echo "" > config.status
+      - name: Install dependencies
+        run: |
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update -y
+          sudo apt-get install -y libltdl-dev
 
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: cpp
+      - name: Configure ImageMagick
+        run: |
+          export CFLAGS="-Wno-deprecated-declarations"
+          autoreconf -fiv
+          ./configure --with-quantum-depth=${{matrix.quantum}} --enable-hdri=${{matrix.hdri}} --${{matrix.modules}}
+          echo "" > config.status
 
-    - name: Build ImageMagick
-      run: |
-        make
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 #v4.39.3
+        with:
+          languages: c-cpp
 
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      - name: Build ImageMagick
+        run: |
+          make
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 #v4.39.3
+
+  actions:
+    name: CodeQL analysis (GitHub Actions)
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 #v4.39.3
+        with:
+          languages: actions
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 #v4.39.3

@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -271,7 +271,7 @@ MagickExport void *CropImageToHBITMAP(Image *image,
       q->rgbGreen = ScaleQuantumToChar(GetPixelGreen(image,p));
       q->rgbBlue = ScaleQuantumToChar(GetPixelBlue(image,p));
       q->rgbReserved = 0;
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
       q++;
     }
     proceed=SetImageProgress(image,CropImageTag,y,page.height);
@@ -381,7 +381,7 @@ MagickExport void *ImageToHBITMAP(Image *image,ExceptionInfo *exception)
       q->rgbGreen=ScaleQuantumToChar(GetPixelGreen(image,p));
       q->rgbBlue=ScaleQuantumToChar(GetPixelBlue(image,p));
       q->rgbReserved=0;
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
       q++;
     }
   }

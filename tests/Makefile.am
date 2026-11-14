@@ -4,7 +4,7 @@
 # You may not use this file except in compliance with the License.
 # obtain a copy of the License at
 #
-#   https://imagemagick.org/script/license.php
+#   https://imagemagick.org/license/
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,7 +18,8 @@ TESTS_CPPFLAGS = $(AM_CPPFLAGS)
 TESTS_CHECK_PGRMS = \
   tests/validate \
   tests/drawtest \
-  tests/wandtest
+  tests/wandtest \
+  tests/resize-filter-pixels
 
 tests_validate_SOURCES  = tests/validate.c tests/validate.h
 tests_validate_CPPFLAGS = $(TESTS_CPPFLAGS)
@@ -35,11 +36,26 @@ tests_wandtest_CPPFLAGS = $(TESTS_CPPFLAGS)
 tests_wandtest_LDFLAGS  = $(LDFLAGS)
 tests_wandtest_LDADD    = $(MAGICKCORE_LIBS) $(MAGICKWAND_LIBS)
 
+tests_resize_filter_pixels_SOURCES = tests/resize-filter-pixels.c
+tests_resize_filter_pixels_CPPFLAGS = $(TESTS_CPPFLAGS)
+tests_resize_filter_pixels_LDFLAGS = $(LDFLAGS)
+tests_resize_filter_pixels_LDADD = $(MAGICKCORE_LIBS) $(MATH_LIBS)
+
 TESTS_XFAIL_TESTS = 
 
 TESTS_TESTS = \
   tests/cli-colorspace.tap \
+  tests/cli-exif.tap \
+  tests/cli-heic.tap \
+  tests/cli-mogrify.tap \
+  tests/cli-pcx.tap \
   tests/cli-pipe.tap \
+  tests/cli-svg.tap \
+  tests/cli-statistic.tap \
+  tests/cli-tiff.tap \
+  tests/cli-uhdr.tap \
+  tests/cli-uhdr-encoder.tap \
+  tests/cli-uhdr-resize-filter.tap \
   tests/validate-colorspace.tap \
   tests/validate-compare.tap \
   tests/validate-composite.tap \
@@ -53,17 +69,23 @@ TESTS_TESTS = \
   tests/validate-montage.tap \
   tests/validate-stream.tap \
   tests/drawtest.tap \
+  tests/resize-filter-pixels.tap \
   tests/wandtest.tap
 
 TESTS_EXTRA_DIST = \
   tests/common.shi \
   tests/rose.pnm \
+  tests/cli-uhdr-iptc.jpg \
+  tests/input_svg_gradient_transform.svg \
+  tests/input_svg_inline_style.svg \
   tests/input_256c.miff \
   tests/input_bilevel.miff \
   tests/input_gray.miff \
   tests/input_truecolor.miff \
   tests/sequence.miff \
+  tests/resize-filter-pixels.q16.txt \
   $(TESTS_TESTS)
 
 TESTS_CLEANFILES = \
-  tests/*_out.*
+  tests/*_out.* \
+  tests/resize-filter-pixels.out

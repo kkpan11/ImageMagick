@@ -5,7 +5,7 @@
 #  You may not use this file except in compliance with the License.  You may
 #  obtain a copy of the License at
 #
-#    https://imagemagick.org/script/license.php
+#    https://imagemagick.org/license/
 #
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
@@ -36,14 +36,14 @@ print("Microsoft Windows bitmap image file ...\n");
 testReadWrite( 'BMP:input.bmp',
   'BMP:output.bmp',
   q//,
-  'a0c5566d67ad974ba31f6f5d9ef1661b2613b60ac934f2339a2efafed1ecb68b');
+  'd7324c919f04f4c118da68061a5dbb3f07ebab76b471ecfb0ac822453f677983');
 
 print("Microsoft Windows 24-bit bitmap image file ...\n");
 ++$test;
 testReadWrite( 'BMP:input.bmp24',
   'BMP:output.bmp24',
   q//,
-  '74136c90d3e699ea5bcbf4aa733aff0dc822b6af72fce00f0c7647bcb0d49f66');
+  'fb6fc68beb3b1001c5ebaa671c8ac8fddea06995027127765ff508f77723cc52');
 
 print("ZSoft IBM PC multi-page Paintbrush file ...\n");
 ++$test;

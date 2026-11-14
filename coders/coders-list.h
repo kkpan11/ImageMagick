@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,6 +18,7 @@
 
 AddMagickCoder(AAI)
 AddMagickCoder(ART)
+AddMagickCoder(ASE)
 AddMagickCoder(ASHLAR)
 AddMagickCoder(AVS)
 AddMagickCoder(BAYER)
@@ -35,12 +36,16 @@ AddMagickCoder(CLIP)
 AddMagickCoder(CMYK)
 AddMagickCoder(CUBE)
 AddMagickCoder(CUT)
+AddMagickCoder(C2PA)
 AddMagickCoder(DCM)
 AddMagickCoder(DDS)
 AddMagickCoder(DEBUG)
 AddMagickCoder(DIB)
 #if defined(MAGICKCORE_DJVU_DELEGATE)
   AddMagickCoder(DJVU)
+#endif
+#if defined(MAGICKCORE_DMR_DELEGATE)
+  AddMagickCoder(DMR)
 #endif
 AddMagickCoder(DNG)
 #if defined(MAGICKCORE_GVC_DELEGATE)
@@ -99,6 +104,7 @@ AddMagickCoder(JSON)
 #if defined(MAGICKCORE_JXL_DELEGATE)
   AddMagickCoder(JXL)
 #endif
+AddMagickCoder(KERNEL)
 AddMagickCoder(LABEL)
 AddMagickCoder(MAC)
 AddMagickCoder(MAGICK)
@@ -148,6 +154,7 @@ AddMagickCoder(RLE)
 AddMagickCoder(SCR)
 AddMagickCoder(SCREENSHOT)
 AddMagickCoder(SCT)
+AddMagickCoder(SF3)
 AddMagickCoder(SFW)
 AddMagickCoder(SGI)
 AddMagickCoder(SIXEL)
@@ -178,6 +185,7 @@ AddMagickCoder(VID)
 AddMagickCoder(VIDEO)
 AddMagickCoder(VIFF)
 AddMagickCoder(VIPS)
+AddMagickCoder(WBINFO)
 AddMagickCoder(WBMP)
 #if defined(MAGICKCORE_WEBP_DELEGATE)
   AddMagickCoder(WEBP)

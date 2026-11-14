@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -45,6 +45,7 @@ extern MagickExport MagickBooleanType
   AcquireUniqueSymbolicLink(const char *,char *),
   ExpandFilenames(int *,char ***),
   GetPathAttributes(const char *,void *),
+  GetPathTemplate(char *),
   IsPathAccessible(const char *);
 
 extern MagickExport size_t

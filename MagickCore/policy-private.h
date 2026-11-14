@@ -1,12 +1,12 @@
 /*
   Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization
   dedicated to making software imaging solutions freely available.
-  
+
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
-  
-    https://imagemagick.org/script/license.php
-  
+
+    https://imagemagick.org/license/
+
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,7 +22,12 @@
 extern "C" {
 #endif
 
-#if MAGICKCORE_ZERO_CONFIGURATION_SUPPORT
+#include "MagickCore/quantum-private.h"
+#include "MagickCore/resource-private.h"
+#include "MagickCore/string-private.h"
+#include "MagickCore/utility-private.h"
+
+#if defined(MAGICKCORE_ZERO_CONFIGURATION_SUPPORT)
 /*
   Zero configuration security policy.  Discussion @
   https://imagemagick.org/script/security-policy.php.
@@ -33,11 +38,44 @@ static const char
 </policymap>";
 #endif
 
+extern MagickExport MagickBooleanType
+  IsPathAuthorized(const PolicyRights,const char *);
+
 extern MagickPrivate MagickBooleanType
   PolicyComponentGenesis(void);
 
 extern MagickPrivate void
   PolicyComponentTerminus(void);
+
+static inline ssize_t GetShredPasses(void)
+{
+  char
+    *option;
+
+  ssize_t
+    policy_passes = 0,
+    env_passes = 0,
+    passes;
+
+  option=GetPolicyValue("system:shred");
+  if (option != (char *) NULL)
+    {
+      policy_passes=(ssize_t) StringToLong(option);
+      option=DestroyString(option);
+      if (policy_passes < 0)
+        return(0);
+    }
+  option=GetEnvironmentValue("MAGICK_SHRED_PASSES");
+  if (option != (char *) NULL)
+    {
+      env_passes=(ssize_t) StringToLong(option);
+      option=DestroyString(option);
+      if (env_passes < 0)
+        return(0);
+    }
+  passes=MagickMax(policy_passes,env_passes);
+  return(passes);
+}
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

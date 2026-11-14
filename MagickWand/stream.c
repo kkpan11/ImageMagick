@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -160,8 +160,10 @@ WandExport MagickBooleanType StreamImageCommand(ImageInfo *image_info,
 }
 #define ThrowStreamException(asperity,tag,option) \
 { \
-  (void) ThrowMagickException(exception,GetMagickModule(),asperity,tag,"`%s'", \
-    option); \
+  char *message = GetExceptionMessage(errno);     \
+  (void) ThrowMagickException(exception,GetMagickModule(),asperity,tag, \
+    "`%s'",option == (char *) NULL ? message : option); \
+  message=DestroyString(message); \
   DestroyStream(); \
   return(MagickFalse); \
 }
@@ -189,7 +191,7 @@ WandExport MagickBooleanType StreamImageCommand(ImageInfo *image_info,
   MagickBooleanType
     fire,
     pend,
-    respect_parenthesis;
+    respect_parentheses;
 
   MagickStatusType
     status;
@@ -240,7 +242,7 @@ WandExport MagickBooleanType StreamImageCommand(ImageInfo *image_info,
   NewImageStack();
   option=(char *) NULL;
   pend=MagickFalse;
-  respect_parenthesis=MagickFalse;
+  respect_parentheses=MagickFalse;
   stream_info=AcquireStreamInfo(image_info,exception);
   status=MagickTrue;
   /*
@@ -250,14 +252,14 @@ WandExport MagickBooleanType StreamImageCommand(ImageInfo *image_info,
   status=ExpandFilenames(&argc,&argv);
   if (status == MagickFalse)
     ThrowStreamException(ResourceLimitError,"MemoryAllocationFailed",
-      GetExceptionMessage(errno));
+      (char *) NULL);
   status=OpenStream(image_info,stream_info,argv[argc-1],exception);
   if (status == MagickFalse)
     {
       DestroyStream();
       return(MagickFalse);
     }
-  for (i=1; i < (ssize_t) (argc-1); i++)
+  for (i=1; i < ((ssize_t) argc-1); i++)
   {
     option=argv[i];
     if (LocaleCompare(option,"(") == 0)
@@ -286,7 +288,7 @@ WandExport MagickBooleanType StreamImageCommand(ImageInfo *image_info,
         */
         FireImageStack(MagickFalse,MagickFalse,pend);
         filename=argv[i];
-        if ((LocaleCompare(filename,"--") == 0) && (i < (ssize_t) (argc-1)))
+        if ((LocaleCompare(filename,"--") == 0) && (i < ((ssize_t) argc-1)))
           filename=argv[++i];
         (void) CopyMagickString(image_info->filename,filename,MagickPathExtent);
         images=StreamImage(image_info,stream_info,exception);
@@ -620,7 +622,7 @@ WandExport MagickBooleanType StreamImageCommand(ImageInfo *image_info,
           break;
         if (LocaleNCompare("respect-parentheses",option+1,17) == 0)
           {
-            respect_parenthesis=(*option == '-') ? MagickTrue : MagickFalse;
+            respect_parentheses=(*option == '-') ? MagickTrue : MagickFalse;
             break;
           }
         ThrowStreamException(OptionError,"UnrecognizedOption",option)
@@ -749,7 +751,7 @@ WandExport MagickBooleanType StreamImageCommand(ImageInfo *image_info,
   }
   if (k != 0)
     ThrowStreamException(OptionError,"UnbalancedParenthesis",argv[i]);
-  if (i-- != (ssize_t) (argc-1))
+  if (i-- != ((ssize_t) argc-1))
     ThrowStreamException(OptionError,"MissingAnImageFilename",argv[i]);
   if (image == (Image *) NULL)
     ThrowStreamException(OptionError,"MissingAnImageFilename",argv[i]);

@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,11 +22,27 @@
 extern "C" {
 #endif
 
-static inline double MagickLog10(const double x)
+static inline MagickBooleanType MagickSafeSignificantError(const double error,
+  const double fuzz)
 {
-  if (fabs(x) < MagickEpsilon)
-    return(log10(MagickEpsilon));
-  return(log10(fabs(x)));
+  double threshold = (fuzz > 0.0 ? fuzz : MagickEpsilon)*(1.0+MagickEpsilon);
+  return(error > threshold ? MagickTrue : MagickFalse);
+}
+
+#ifndef DBL_TRUE_MIN
+#define DBL_TRUE_MIN 4.9406564584124654e-324
+#endif
+
+static inline double MagickSafeLog10(const double x)
+{
+  return(log10(fmax(x,DBL_TRUE_MIN)));
+}
+
+static inline double MagickSafeReciprocal(const double x)
+{
+  if ((x > -MagickEpsilon) && (x < MagickEpsilon))
+    return(1.0/MagickEpsilon);
+  return(1.0/x);
 }
 
 #if defined(__cplusplus) || defined(c_plusplus)

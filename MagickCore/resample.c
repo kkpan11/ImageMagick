@@ -24,7 +24,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -551,8 +551,8 @@ MagickExport MagickBooleanType ResamplePixelColor(
     Determine the parallelogram bounding box fitted to the ellipse
     centered at u0,v0.  This area is bounding by the lines...
   */
-  v1 = (ssize_t)ceil(v0 - resample_filter->Vlimit);  /* range of scan lines */
-  v2 = (ssize_t)floor(v0 + resample_filter->Vlimit);
+  v1 = CastDoubleToSsizeT(ceil(v0-resample_filter->Vlimit));  /* range of scan lines */
+  v2 = CastDoubleToSsizeT(floor(v0+resample_filter->Vlimit));
 
   /* scan line start and width across the parallelogram */
   u1 = u0 + (v1-v0)*resample_filter->slope - resample_filter->Uwidth;
@@ -598,11 +598,11 @@ MagickExport MagickBooleanType ResamplePixelColor(
       weight = 0.0;
 #if FILTER_LUT
       /* Note that the ellipse has been pre-scaled so F = WLUT_WIDTH */
-      if ((Q >= 0.0) && ((int) Q < WLUT_WIDTH)) {
-        weight = resample_filter->filter_lut[(int)Q];
+      if (((int) Q >= 0) && ((int) Q < WLUT_WIDTH)) {
+        weight = resample_filter->filter_lut[(int) Q];
 #else
       /* Note that the ellipse has been pre-scaled so F = support^2 */
-      if ((Q >= 0.0) && (Q < (double)resample_filter->F)) {
+      if ((Q >= 0.0) && (Q < resample_filter->F)) {
         weight = GetResizeFilterWeight(resample_filter->filter_def,
              sqrt(Q));    /* a SquareRoot!  Arrggghhhhh... */
 #endif
@@ -642,7 +642,7 @@ MagickExport MagickBooleanType ResamplePixelColor(
 #else
       }
 #endif
-      pixels+=GetPixelChannels(resample_filter->image);
+      pixels+=(ptrdiff_t) GetPixelChannels(resample_filter->image);
       Q += DQ;
       DQ += DDQ;
     }
@@ -1207,10 +1207,10 @@ MagickExport void ScaleResampleFilter(ResampleFilter *resample_filter,
   { double scale;
 #if FILTER_LUT
     /* scale so that F = WLUT_WIDTH; -- hardcoded */
-    scale=(double) WLUT_WIDTH*PerceptibleReciprocal(F);
+    scale=(double) WLUT_WIDTH*MagickSafeReciprocal(F);
 #else
     /* scale so that F = resample_filter->F (support^2) */
-    scale=resample_filter->F*PerceptibleReciprocal(F);
+    scale=resample_filter->F*MagickSafeReciprocal(F);
 #endif
     resample_filter->A = A*scale;
     resample_filter->B = B*scale;

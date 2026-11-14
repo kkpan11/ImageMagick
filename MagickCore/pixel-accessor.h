@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -138,9 +138,9 @@ static inline PixelTrait GetPixelChannelTraits(
 }
 
 static inline size_t GetPixelChannels(const Image *magick_restrict image)
-{
+{ 
   return(image->number_channels);
-}
+} 
 
 static inline Quantum GetPixelCompositeMask(
   const Image *magick_restrict image,const Quantum *magick_restrict pixel)
@@ -205,6 +205,10 @@ static inline Quantum GetPixelIndex(const Image *magick_restrict image,
 {
   if (image->channel_map[IndexPixelChannel].traits == UndefinedPixelTrait)
     return((Quantum) 0);
+#if defined(MAGICKCORE_HDRI_SUPPORT)
+  if (pixel[image->channel_map[IndexPixelChannel].offset] < 0)
+    return((Quantum) 0);
+#endif
   return(pixel[image->channel_map[IndexPixelChannel].offset]);
 }
 
@@ -230,7 +234,7 @@ static inline MagickRealType GetPixelInfoChannel(
     case AlphaPixelChannel:
     {
       if (pixel_info->alpha_trait == UndefinedPixelTrait)
-        return(OpaqueAlpha);
+        return((MagickRealType) OpaqueAlpha);
       return(pixel_info->alpha);
     }
     case IndexPixelChannel: return(pixel_info->index);
@@ -239,26 +243,18 @@ static inline MagickRealType GetPixelInfoChannel(
   return((MagickRealType) 0.0);
 }
 
-static inline double PerceptibleReciprocal(const double x)
-{
-  double
-    sign;
-
-  /*
-    Return 1/x where x is perceptible (not unlimited or infinitesimal).
-  */
-  sign=x < 0.0 ? -1.0 : 1.0;
-  if ((sign*x) >= MagickEpsilon)
-    return(1.0/x);
-  return(sign/MagickEpsilon);
-}
-
 static inline MagickRealType GetPixelInfoLuma(
   const PixelInfo *magick_restrict pixel)
 {
   MagickRealType
     intensity;
 
+  if ((pixel->red == pixel->green) && (pixel->green == pixel->blue))
+    {
+      if (pixel->colorspace == sRGBColorspace)
+        return(pixel->red);
+      return(EncodePixelGamma(pixel->red));
+    }
   if (pixel->colorspace == sRGBColorspace)
     {
       intensity=(MagickRealType) (0.212656*pixel->red+0.715158*pixel->green+
@@ -277,6 +273,12 @@ static inline MagickRealType GetPixelInfoLuminance(
   MagickRealType
     intensity;
 
+  if ((pixel->red == pixel->green) && (pixel->green == pixel->blue))
+    {
+      if (pixel->colorspace != sRGBColorspace)
+        return(pixel->red);
+      return(DecodePixelGamma(pixel->red));
+    }
   if (pixel->colorspace != sRGBColorspace)
     {
       intensity=(MagickRealType) (0.212656*pixel->red+0.715158*pixel->green+
@@ -305,12 +307,18 @@ static inline MagickRealType GetPixelLuma(
   const Image *magick_restrict image,const Quantum *magick_restrict pixel)
 {
   MagickRealType
-    intensity;
+    intensity,
+    red,
+    green,
+    blue;
 
-  intensity=
-    0.212656*(MagickRealType) pixel[image->channel_map[RedPixelChannel].offset]+
-    0.715158*(MagickRealType) pixel[image->channel_map[GreenPixelChannel].offset]+
-    0.072186*(MagickRealType) pixel[image->channel_map[BluePixelChannel].offset];
+  red=(MagickRealType) pixel[image->channel_map[RedPixelChannel].offset];
+  green=(MagickRealType) pixel[image->channel_map[GreenPixelChannel].offset];
+  blue=(MagickRealType) pixel[image->channel_map[BluePixelChannel].offset];
+  if ((red == green) && (green == blue))
+    intensity=red;
+  else
+    intensity=0.212656*red+0.715158*green+0.072186*blue;
   return(intensity);
 }
 
@@ -318,22 +326,30 @@ static inline MagickRealType GetPixelLuminance(
   const Image *magick_restrict image,const Quantum *magick_restrict pixel)
 {
   MagickRealType
-    intensity;
+    intensity,
+    red,
+    green,
+    blue;
 
   if (image->colorspace != sRGBColorspace)
     {
-      intensity=
-        0.212656*(MagickRealType) pixel[image->channel_map[RedPixelChannel].offset]+
-        0.715158*(MagickRealType) pixel[image->channel_map[GreenPixelChannel].offset]+
-        0.072186*(MagickRealType) pixel[image->channel_map[BluePixelChannel].offset];
-      return(intensity);
+      red=(MagickRealType) pixel[image->channel_map[RedPixelChannel].offset];
+      green=(MagickRealType) pixel[image->channel_map[GreenPixelChannel].offset];
+      blue=(MagickRealType) pixel[image->channel_map[BluePixelChannel].offset];
     }
-  intensity=(MagickRealType) (0.212656*DecodePixelGamma((MagickRealType)
-    pixel[image->channel_map[RedPixelChannel].offset])+0.715158*
-    DecodePixelGamma((MagickRealType)
-    pixel[image->channel_map[GreenPixelChannel].offset])+0.072186*
-    DecodePixelGamma((MagickRealType)
-    pixel[image->channel_map[BluePixelChannel].offset]));
+  else
+    {
+      red=DecodePixelGamma((MagickRealType)
+        pixel[image->channel_map[RedPixelChannel].offset]);
+      green=DecodePixelGamma((MagickRealType)
+        pixel[image->channel_map[GreenPixelChannel].offset]);
+      blue=DecodePixelGamma((MagickRealType)
+        pixel[image->channel_map[BluePixelChannel].offset]);
+    }
+  if ((red == green) && (green == blue))
+    intensity=red;
+  else
+    intensity=0.212656*red+0.715158*green+0.072186*blue;
   return(intensity);
 }
 
@@ -374,10 +390,10 @@ static inline void GetPixelInfoRGBA(const Quantum red,const Quantum green,
   const Quantum blue,const Quantum alpha,PixelInfo *magick_restrict pixel)
 {
   GetPixelInfo((Image *) NULL,pixel);
-  pixel->red=red;
-  pixel->green=green;
-  pixel->blue=blue;
-  pixel->alpha=alpha;
+  pixel->red=(MagickRealType) red;
+  pixel->green=(MagickRealType) green;
+  pixel->blue=(MagickRealType) blue;
+  pixel->alpha=(MagickRealType) alpha;
 }
 
 static inline Quantum GetPixelWriteMask(
@@ -503,6 +519,30 @@ static inline MagickRealType AbsolutePixelValue(const MagickRealType x)
   return(x < 0.0 ? -x : x);
 }
 
+static inline QuantumAny CastDoubleToQuantumAny(const double x)
+{
+  double
+    value;
+
+  if (IsNaN(x) != 0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  value=(x < 0.0) ? ceil(x) : floor(x);
+  if (value < 0.0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  if (value >= ((double) ((QuantumAny) ~0)))
+    {
+      errno=ERANGE;
+      return((QuantumAny) ~0);
+    }
+  return((QuantumAny) value);
+}
+
 static inline MagickBooleanType IsPixelAtDepth(const Quantum pixel,
   const QuantumAny range)
 {
@@ -515,8 +555,9 @@ static inline MagickBooleanType IsPixelAtDepth(const Quantum pixel,
   quantum=(Quantum) (((double) QuantumRange*((QuantumAny) (((double) range*
     pixel)/(double) QuantumRange+0.5)))/(double) range+0.5);
 #else
-  quantum=(Quantum) (((double) QuantumRange*((QuantumAny) (((double) range*
-    (double) pixel)/(double) QuantumRange+0.5)))/(double) range);
+  quantum=(Quantum) (((double) QuantumRange*((double) CastDoubleToQuantumAny(
+    ((double) range*(double) pixel)/(double) QuantumRange+0.5)))/
+    (double) range);
 #endif
   return(pixel == quantum ? MagickTrue : MagickFalse);
 }
@@ -960,6 +1001,25 @@ static inline void SetPixelYTraits(Image *image,const PixelTrait traits)
 {
   image->channel_map[YPixelChannel].traits=traits;
 }
+
+static inline size_t GetImageChannels(const Image *image)
+{ 
+  ssize_t
+    i;
+
+  size_t
+    channels;
+  
+  channels=0;
+  for (i=0; i < (ssize_t) GetPixelChannels(image); i++)
+  {   
+    PixelChannel channel = GetPixelChannelChannel(image,i);
+    PixelTrait traits = GetPixelChannelTraits(image,channel);
+    if ((traits & UpdatePixelTrait) != 0)
+      channels++;
+  }   
+  return(channels == 0 ? (size_t) 1 : channels);
+} 
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

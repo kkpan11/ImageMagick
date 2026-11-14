@@ -17,13 +17,13 @@
 %                                 April 2014                                  %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2014 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -168,11 +168,11 @@ static Image *ReadSCREENSHOTImage(const ImageInfo *image_info,
       screen=AcquireImage(image_info,exception);
       geometry.x=0;
       geometry.y=0;
-      geometry.width=(size_t) GetDeviceCaps(hDC,HORZRES);
-      geometry.height=(size_t) GetDeviceCaps(hDC,VERTRES);
+      geometry.width=(size_t) GetDeviceCaps(hDC,DESKTOPHORZRES);
+      geometry.height=(size_t) GetDeviceCaps(hDC,DESKTOPVERTRES);
       if (image_info->extract != (char *) NULL)
         {
-          geometry.x=MagickMin(screen->extract_info.x,geometry.width);
+          geometry.x=MagickMin(screen->extract_info.x,(ssize_t) geometry.width);
           if (geometry.x < 0)
             {
               geometry.width=(size_t ) MagickMin(0,(ssize_t) geometry.width+
@@ -182,7 +182,7 @@ static Image *ReadSCREENSHOTImage(const ImageInfo *image_info,
           geometry.width=geometry.width-geometry.x;
           if (screen->columns > 0)
             geometry.width=MagickMin(geometry.width,screen->columns);
-          geometry.y=MagickMin(screen->extract_info.y,geometry.height);
+          geometry.y=MagickMin(screen->extract_info.y,(ssize_t) geometry.height);
           if (geometry.y < 0)
             {
               geometry.width=(size_t ) MagickMin(0,(ssize_t) geometry.width+
@@ -239,7 +239,7 @@ static Image *ReadSCREENSHOTImage(const ImageInfo *image_info,
           ThrowReaderException(CoderError,"UnableToCreateBitmap");
         }
       BitBlt(bitmapDC,0,0,(int) screen->columns,(int) screen->rows,hDC,
-        geometry.x,geometry.y,SRCCOPY);
+        (int) geometry.x,(int) geometry.y,SRCCOPY);
       (void) SelectObject(bitmapDC,bitmapOld);
 
       for (y=0; y < (ssize_t) screen->rows; y++)
@@ -254,7 +254,7 @@ static Image *ReadSCREENSHOTImage(const ImageInfo *image_info,
           SetPixelBlue(screen,ScaleCharToQuantum(p->rgbBlue),q);
           SetPixelAlpha(screen,OpaqueAlpha,q);
           p++;
-          q+=GetPixelChannels(screen);
+          q+=(ptrdiff_t) GetPixelChannels(screen);
         }
         if (SyncAuthenticPixels(screen,exception) == MagickFalse)
           break;

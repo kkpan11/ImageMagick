@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -169,14 +169,14 @@ static Image *ReadMONOImage(const ImageInfo *image_info,
       if (bit == 0)
         byte=(size_t) ReadBlobByte(image);
       if (image_info->endian == LSBEndian)
-        SetPixelIndex(image,((byte & 0x01) != 0) ? 0x00 : 0x01,q);
+        SetPixelIndex(image,(Quantum) (((byte & 0x01) != 0) ? 0x00 : 0x01),q);
       else
-        SetPixelIndex(image,((byte & 0x01) != 0) ? 0x01 : 0x00,q);
+        SetPixelIndex(image,(Quantum) (((byte & 0x01) != 0) ? 0x01 : 0x00),q);
       bit++;
       if (bit == 8)
         bit=0;
       byte>>=1;
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;
@@ -349,7 +349,7 @@ static MagickBooleanType WriteMONOImage(const ImageInfo *image_info,
           bit=0;
           byte=0;
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (bit != 0)
       (void) WriteBlobByte(image,(unsigned char) (byte >> (8-bit)));

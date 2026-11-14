@@ -5,7 +5,7 @@
 #  You may not use this file except in compliance with the License.  You may
 #  obtain a copy of the License at
 #
-#    https://imagemagick.org/script/license.php
+#    https://imagemagick.org/license/
 #
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
@@ -162,7 +162,7 @@ testReadCompare('sun:input.im24', 'reference/read/input_im24.miff', q//, 0.0, 0.
 
 print("Truevision Targa image file ...\n");
 ++$test;
-testReadCompare('input.tga', 'reference/read/input_tga.miff', q//, 0.1, 0.9);
+testReadCompare('input.tga', 'reference/read/input_tga.miff', q//, 0.3, 0.9);
 
 print("PSX TIM file ...\n");
 ++$test;

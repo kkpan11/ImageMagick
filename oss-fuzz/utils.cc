@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -43,6 +43,7 @@ public:
     Magick::SecurityPolicy::anonymousCacheMemoryMap();
     Magick::SecurityPolicy::anonymousSystemMemoryMap();
     Magick::SecurityPolicy::maxMemoryRequest(128000000);
+    Magick::SecurityPolicy::maxProfileSize(1000000);
     Magick::ResourceLimits::memory(1000000000);
     Magick::ResourceLimits::map(500000000);
     Magick::ResourceLimits::width(FUZZ_MAX_SIZE);

@@ -17,13 +17,13 @@
 %                              August 2007                                    %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2007 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -49,12 +49,14 @@
 #include "MagickCore/matrix.h"
 #include "MagickCore/matrix-private.h"
 #include "MagickCore/memory_.h"
+#include "MagickCore/memory-private.h"
 #include "MagickCore/nt-base-private.h"
 #include "MagickCore/pixel-accessor.h"
 #include "MagickCore/resource_.h"
 #include "MagickCore/semaphore.h"
 #include "MagickCore/thread-private.h"
 #include "MagickCore/utility.h"
+#include "MagickCore/utility-private.h"
 
 /*
   Typedef declaration.
@@ -140,34 +142,21 @@ static inline MagickOffsetType WriteMatrixElements(
   ssize_t
     count;
 
-#if !defined(MAGICKCORE_HAVE_PWRITE)
   LockSemaphoreInfo(matrix_info->semaphore);
   if (lseek(matrix_info->file,offset,SEEK_SET) < 0)
     {
       UnlockSemaphoreInfo(matrix_info->semaphore);
       return((MagickOffsetType) -1);
     }
-#endif
   count=0;
   for (i=0; i < (MagickOffsetType) length; i+=count)
   {
-#if !defined(MAGICKCORE_HAVE_PWRITE)
-    count=write(matrix_info->file,buffer+i,(size_t) MagickMin(length-
-      (MagickSizeType) i,(MagickSizeType) MAGICK_SSIZE_MAX));
-#else
-    count=pwrite(matrix_info->file,buffer+i,(size_t) MagickMin(length-
-      (MagickSizeType) i,(MagickSizeType) MAGICK_SSIZE_MAX),offset+i);
-#endif
+    count=MagickWrite(matrix_info->file,buffer+i,(size_t) MagickMin(length-
+      (MagickSizeType) i,(MagickSizeType) MagickMaxBufferExtent));
     if (count <= 0)
-      {
-        count=0;
-        if (errno != EINTR)
-          break;
-      }
+      break;
   }
-#if !defined(MAGICKCORE_HAVE_PWRITE)
   UnlockSemaphoreInfo(matrix_info->semaphore);
-#endif
   return(i);
 }
 
@@ -232,17 +221,18 @@ MagickExport MatrixInfo *AcquireMatrixInfo(const size_t columns,
         "CacheResourcesExhausted","`%s'","matrix cache");
       return(DestroyMatrixInfo(matrix_info));
     }
-  matrix_info->type=MemoryCache;
+  matrix_info->type=UndefinedCache;
   status=AcquireMagickResource(AreaResource,matrix_info->length);
   if ((status != MagickFalse) &&
-      (matrix_info->length == (MagickSizeType) ((size_t) matrix_info->length)))
+      (matrix_info->length == (MagickSizeType) ((size_t) matrix_info->length)) &&
+      ((size_t) matrix_info->length <= GetMaxMemoryRequest()))
     {
       status=AcquireMagickResource(MemoryResource,matrix_info->length);
       if (status != MagickFalse)
         {
           matrix_info->mapped=MagickFalse;
-          matrix_info->elements=AcquireMagickMemory((size_t)
-            matrix_info->length);
+          matrix_info->elements=MagickAssumeAligned(AcquireAlignedMemory(1,
+            (size_t) matrix_info->length));
           if (matrix_info->elements == NULL)
             {
               matrix_info->mapped=MagickTrue;
@@ -251,6 +241,8 @@ MagickExport MatrixInfo *AcquireMatrixInfo(const size_t columns,
             }
           if (matrix_info->elements == (unsigned short *) NULL)
             RelinquishMagickResource(MemoryResource,matrix_info->length);
+          else
+            matrix_info->type=MemoryCache;
         }
     }
   matrix_info->file=(-1);
@@ -377,7 +369,7 @@ MagickExport MatrixInfo *DestroyMatrixInfo(MatrixInfo *matrix_info)
     case MemoryCache:
     {
       if (matrix_info->mapped == MagickFalse)
-        matrix_info->elements=RelinquishMagickMemory(matrix_info->elements);
+        matrix_info->elements=RelinquishAlignedMemory(matrix_info->elements);
       else
         {
           (void) UnmapBlob(matrix_info->elements,(size_t) matrix_info->length);
@@ -396,7 +388,7 @@ MagickExport MatrixInfo *DestroyMatrixInfo(MatrixInfo *matrix_info)
     case DiskCache:
     {
       if (matrix_info->file != -1)
-        (void) close(matrix_info->file);
+        (void) close_utf8(matrix_info->file);
       (void) RelinquishUniqueFileResource(matrix_info->path);
       RelinquishMagickResource(DiskResource,matrix_info->length);
       break;
@@ -407,183 +399,6 @@ MagickExport MatrixInfo *DestroyMatrixInfo(MatrixInfo *matrix_info)
   UnlockSemaphoreInfo(matrix_info->semaphore);
   RelinquishSemaphoreInfo(&matrix_info->semaphore);
   return((MatrixInfo *) RelinquishMagickMemory(matrix_info));
-}
-
-/*
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%                                                                             %
-%                                                                             %
-%                                                                             %
-+   G a u s s J o r d a n E l i m i n a t i o n                               %
-%                                                                             %
-%                                                                             %
-%                                                                             %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%  GaussJordanElimination() returns a matrix in reduced row echelon form,
-%  while simultaneously reducing and thus solving the augmented results
-%  matrix.
-%
-%  See also  http://en.wikipedia.org/wiki/Gauss-Jordan_elimination
-%
-%  The format of the GaussJordanElimination method is:
-%
-%      MagickBooleanType GaussJordanElimination(double **matrix,
-%        double **vectors,const size_t rank,const size_t number_vectors)
-%
-%  A description of each parameter follows:
-%
-%    o matrix: the matrix to be reduced, as an 'array of row pointers'.
-%
-%    o vectors: the additional matrix argumenting the matrix for row reduction.
-%             Producing an 'array of column vectors'.
-%
-%    o rank:  The size of the matrix (both rows and columns).
-%             Also represents the number terms that need to be solved.
-%
-%    o number_vectors: Number of vectors columns, argumenting the above matrix.
-%             Usually 1, but can be more for more complex equation solving.
-%
-%  Note that the 'matrix' is given as a 'array of row pointers' of rank size.
-%  That is values can be assigned as   matrix[row][column]   where 'row' is
-%  typically the equation, and 'column' is the term of the equation.
-%  That is the matrix is in the form of a 'row first array'.
-%
-%  However 'vectors' is a 'array of column pointers' which can have any number
-%  of columns, with each column array the same 'rank' size as 'matrix'.
-%
-%  This allows for simpler handling of the results, especially is only one
-%  column 'vector' is all that is required to produce the desired solution.
-%
-%  For example, the 'vectors' can consist of a pointer to a simple array of
-%  doubles.  when only one set of simultaneous equations is to be solved from
-%  the given set of coefficient weighted terms.
-%
-%     double **matrix = AcquireMagickMatrix(8UL,8UL);
-%     double coefficients[8];
-%     ...
-%     GaussJordanElimination(matrix, &coefficients, 8UL, 1UL);
-%
-%  However by specifying more 'columns' (as an 'array of vector columns',
-%  you can use this function to solve a set of 'separable' equations.
-%
-%  For example a distortion function where    u = U(x,y)   v = V(x,y)
-%  And the functions U() and V() have separate coefficients, but are being
-%  generated from a common x,y->u,v  data set.
-%
-%  Another example is generation of a color gradient from a set of colors at
-%  specific coordinates, such as a list x,y -> r,g,b,a.
-%
-%  You can also use the 'vectors' to generate an inverse of the given 'matrix'
-%  though as a 'column first array' rather than a 'row first array'. For
-%  details see http://en.wikipedia.org/wiki/Gauss-Jordan_elimination
-%
-*/
-MagickPrivate MagickBooleanType GaussJordanElimination(double **matrix,
-  double **vectors,const size_t rank,const size_t number_vectors)
-{
-#define GaussJordanSwap(x,y) \
-{ \
-  if ((x) != (y)) \
-    { \
-      (x)+=(y); \
-      (y)=(x)-(y); \
-      (x)=(x)-(y); \
-    } \
-}
-
-  double
-    max,
-    scale;
-
-  ssize_t
-    i,
-    j,
-    k;
-
-  ssize_t
-    column,
-    *columns,
-    *pivots,
-    row,
-    *rows;
-
-  columns=(ssize_t *) AcquireQuantumMemory(rank,sizeof(*columns));
-  rows=(ssize_t *) AcquireQuantumMemory(rank,sizeof(*rows));
-  pivots=(ssize_t *) AcquireQuantumMemory(rank,sizeof(*pivots));
-  if ((rows == (ssize_t *) NULL) || (columns == (ssize_t *) NULL) ||
-      (pivots == (ssize_t *) NULL))
-    {
-      if (pivots != (ssize_t *) NULL)
-        pivots=(ssize_t *) RelinquishMagickMemory(pivots);
-      if (columns != (ssize_t *) NULL)
-        columns=(ssize_t *) RelinquishMagickMemory(columns);
-      if (rows != (ssize_t *) NULL)
-        rows=(ssize_t *) RelinquishMagickMemory(rows);
-      return(MagickFalse);
-    }
-  (void) memset(columns,0,rank*sizeof(*columns));
-  (void) memset(rows,0,rank*sizeof(*rows));
-  (void) memset(pivots,0,rank*sizeof(*pivots));
-  column=0;
-  row=0;
-  for (i=0; i < (ssize_t) rank; i++)
-  {
-    max=0.0;
-    for (j=0; j < (ssize_t) rank; j++)
-      if (pivots[j] != 1)
-        {
-          for (k=0; k < (ssize_t) rank; k++)
-            if (pivots[k] != 0)
-              {
-                if (pivots[k] > 1)
-                  return(MagickFalse);
-              }
-            else
-              if (fabs(matrix[j][k]) >= max)
-                {
-                  max=fabs(matrix[j][k]);
-                  row=j;
-                  column=k;
-                }
-        }
-    pivots[column]++;
-    if (row != column)
-      {
-        for (k=0; k < (ssize_t) rank; k++)
-          GaussJordanSwap(matrix[row][k],matrix[column][k]);
-        for (k=0; k < (ssize_t) number_vectors; k++)
-          GaussJordanSwap(vectors[k][row],vectors[k][column]);
-      }
-    rows[i]=row;
-    columns[i]=column;
-    if (matrix[column][column] == 0.0)
-      return(MagickFalse);  /* singularity */
-    scale=PerceptibleReciprocal(matrix[column][column]);
-    matrix[column][column]=1.0;
-    for (j=0; j < (ssize_t) rank; j++)
-      matrix[column][j]*=scale;
-    for (j=0; j < (ssize_t) number_vectors; j++)
-      vectors[j][column]*=scale;
-    for (j=0; j < (ssize_t) rank; j++)
-      if (j != column)
-        {
-          scale=matrix[j][column];
-          matrix[j][column]=0.0;
-          for (k=0; k < (ssize_t) rank; k++)
-            matrix[j][k]-=scale*matrix[column][k];
-          for (k=0; k < (ssize_t) number_vectors; k++)
-            vectors[k][j]-=scale*vectors[k][column];
-        }
-  }
-  for (j=(ssize_t) rank-1; j >= 0; j--)
-    if (columns[j] != rows[j])
-      for (i=0; i < (ssize_t) rank; i++)
-        GaussJordanSwap(matrix[i][rows[j]],matrix[i][columns[j]]);
-  pivots=(ssize_t *) RelinquishMagickMemory(pivots);
-  rows=(ssize_t *) RelinquishMagickMemory(rows);
-  columns=(ssize_t *) RelinquishMagickMemory(columns);
-  return(MagickTrue);
 }
 
 /*
@@ -673,34 +488,21 @@ static inline MagickOffsetType ReadMatrixElements(
   ssize_t
     count;
 
-#if !defined(MAGICKCORE_HAVE_PREAD)
   LockSemaphoreInfo(matrix_info->semaphore);
   if (lseek(matrix_info->file,offset,SEEK_SET) < 0)
     {
       UnlockSemaphoreInfo(matrix_info->semaphore);
       return((MagickOffsetType) -1);
     }
-#endif
   count=0;
   for (i=0; i < (MagickOffsetType) length; i+=count)
   {
-#if !defined(MAGICKCORE_HAVE_PREAD)
-    count=read(matrix_info->file,buffer+i,(size_t) MagickMin(length-i,
-      (MagickSizeType) MAGICK_SSIZE_MAX));
-#else
-    count=pread(matrix_info->file,buffer+i,(size_t) MagickMin(length-
-      (MagickSizeType) i,(MagickSizeType) MAGICK_SSIZE_MAX),offset+i);
-#endif
+    count=MagickRead(matrix_info->file,buffer+i,(size_t) MagickMin(length-i,
+      (MagickSizeType) MagickMaxBufferExtent));
     if (count <= 0)
-      {
-        count=0;
-        if (errno != EINTR)
-          break;
-      }
+      break;
   }
-#if !defined(MAGICKCORE_HAVE_PREAD)
   UnlockSemaphoreInfo(matrix_info->semaphore);
-#endif
   return(i);
 }
 
@@ -850,6 +652,216 @@ MagickPrivate void LeastSquaresAddTerms(double **matrix,double **vectors,
 %                                                                             %
 %                                                                             %
 %                                                                             %
++   G a u s s J o r d a n E l i m n a t i o n                                 %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  GaussJordanElimination() returns a matrix in reduced row echelon form,
+%  while simultaneously reducing and thus solving the augmented results
+%  matrix.
+%
+%  The format of the GaussJordanElimination method is:
+%
+%      MagickBooleanType GaussJordanElimination(double **matrix,
+%        double **vectors,const size_t rank,const size_t number_vectors)
+%
+%  A description of each parameter follows:
+%
+%    o matrix: the matrix to be reduced, as an 'array of row pointers'.
+%
+%    o vectors: the additional matrix argumenting the matrix for row reduction.
+%             Producing an 'array of column vectors'.
+%
+%    o rank:  The size of the matrix (both rows and columns).
+%             Also represents the number terms that need to be solved.
+%
+%    o number_vectors: Number of vectors columns, argumenting the above matrix.
+%             Usually 1, but can be more for more complex equation solving.
+%
+%  Note that the 'matrix' is given as a 'array of row pointers' of rank size.
+%  That is values can be assigned as   matrix[row][column]   where 'row' is
+%  typically the equation, and 'column' is the term of the equation.
+%  That is the matrix is in the form of a 'row first array'.
+%
+%  However 'vectors' is a 'array of column pointers' which can have any number
+%  of columns, with each column array the same 'rank' size as 'matrix'.
+%
+%  This allows for simpler handling of the results, especially is only one
+%  column 'vector' is all that is required to produce the desired solution.
+%
+%  For example, the 'vectors' can consist of a pointer to a simple array of
+%  doubles.  when only one set of simultaneous equations is to be solved from
+%  the given set of coefficient weighted terms.
+%
+%     double **matrix = AcquireMagickMatrix(8UL,8UL);
+%     double coefficients[8];
+%     ...
+%     GaussJordanElimination(matrix,&coefficients,8UL,1UL);
+%
+%  However by specifying more 'columns' (as an 'array of vector columns', you
+%  can use this function to solve a set of 'separable' equations.
+%
+%  For example a distortion function where u = U(x,y) v = V(x,y)
+%  And the functions U() and V() have separate coefficients, but are being
+%  generated from a common x,y->u,v  data set.
+%
+%  Another example is generation of a color gradient from a set of colors at
+%  specific coordinates, such as a list x,y -> r,g,b,a.
+%
+%  You can also use the 'vectors' to generate an inverse of the given 'matrix'
+%  though as a 'column first array' rather than a 'row first array'. For
+%  details see http://en.wikipedia.org/wiki/Gauss-Jordan_elimination
+%
+*/
+MagickPrivate MagickBooleanType GaussJordanElimination(double **matrix,
+  double **vectors,const size_t rank,const size_t number_vectors)
+{
+#define GaussJordanSwap(x,y) \
+{ \
+  double temp = (x); \
+  (x)=(y); \
+  (y)=temp; \
+}
+#define GaussJordanSwapLD(x,y) \
+{ \
+  long double temp = (x); \
+  (x)=(y); \
+  (y)=temp; \
+}
+#define ThrowGaussJordanException() \
+{ \
+  for (i=0; i < (ssize_t) rank; i++) \
+    hp_matrix[i]=(long double *) RelinquishMagickMemory(hp_matrix[i]); \
+  hp_matrix=(long double **) RelinquishMagickMemory(hp_matrix); \
+  if (pivots != (ssize_t *) NULL) \
+    pivots=(ssize_t *) RelinquishMagickMemory(pivots); \
+  if (rows != (ssize_t *) NULL) \
+    rows=(ssize_t *) RelinquishMagickMemory(rows); \
+  if (columns != (ssize_t *) NULL) \
+    columns=(ssize_t *) RelinquishMagickMemory(columns); \
+  return(MagickFalse); \
+}
+
+  long double
+    **hp_matrix = (long double **) NULL,
+    scale;
+
+  ssize_t
+    column,
+    *columns = (ssize_t *) NULL,
+    i,
+    j,
+    *pivots = (ssize_t *) NULL,
+    row,
+    *rows = (ssize_t *) NULL;
+
+  /*
+    Allocate high precision matrix.
+  */
+  hp_matrix=(long double **) AcquireQuantumMemory(rank,sizeof(*hp_matrix));
+  if (hp_matrix == (long double **) NULL)
+    return(MagickFalse);
+  for (i=0; i < (ssize_t) rank; i++)
+  {
+    hp_matrix[i]=(long double *) AcquireQuantumMemory(rank,
+      sizeof(*hp_matrix[i]));
+    if (hp_matrix[i] == (long double *) NULL)
+      ThrowGaussJordanException();
+    for (j=0; j < (ssize_t) rank; j++)
+      hp_matrix[i][j]=(long double)matrix[i][j];
+  }
+  columns=(ssize_t *) AcquireQuantumMemory(rank,sizeof(*columns));
+  rows=(ssize_t *) AcquireQuantumMemory(rank,sizeof(*rows));
+  pivots=(ssize_t *) AcquireQuantumMemory(rank,sizeof(*pivots));
+  if ((columns == (ssize_t *) NULL) || (rows == (ssize_t *) NULL) ||
+      (pivots == (ssize_t *) NULL))
+    ThrowGaussJordanException();
+  (void) memset(columns,0,rank*sizeof(*columns));
+  (void) memset(rows,0,rank*sizeof(*rows));
+  (void) memset(pivots,0,rank*sizeof(*pivots));
+  for (i=0; i < (ssize_t) rank; i++)
+  {
+    long double
+      max = 0.0;
+
+    ssize_t
+      k;
+
+    /*
+      Partial pivoting: find the largest absolute value in the unreduced
+      submatrix.
+    */
+    column=(-1);
+    row=(-1);
+    for (j=0; j < (ssize_t) rank; j++)
+      if (pivots[j] != 1)
+        for (k=0; k < (ssize_t) rank; k++)
+          if ((pivots[k] == 0) && (fabsl(hp_matrix[j][k]) > max))
+            {
+              max=fabsl(hp_matrix[j][k]);
+              row=j;
+              column=k;
+            }
+    if ((column == -1) || (row == -1) || (fabsl(max) < LDBL_MIN))
+      ThrowGaussJordanException();  /* Singular or nearly singular matrix */
+    pivots[column]++;
+    if (row != column)
+      {
+        for (k=0; k < (ssize_t) rank; k++)
+          GaussJordanSwapLD(hp_matrix[row][k],hp_matrix[column][k]);
+        for (k=0; k < (ssize_t) number_vectors; k++)
+          GaussJordanSwap(vectors[k][row],vectors[k][column]);
+      }
+    rows[i]=row;
+    columns[i]=column;
+    if (fabsl(hp_matrix[column][column]) < LDBL_MIN)
+      ThrowGaussJordanException();  /* Singular matrix */
+    scale=1.0L/hp_matrix[column][column];
+    hp_matrix[column][column]=1.0;
+    for (j=0; j < (ssize_t) rank; j++)
+      hp_matrix[column][j]*=scale;
+    for (j=0; j < (ssize_t) number_vectors; j++)
+      vectors[j][column]*=(double) scale;
+    for (j=0; j < (ssize_t) rank; j++)
+      if (j != column)
+        {
+          scale=hp_matrix[j][column];
+          hp_matrix[j][column]=0.0;
+          for (k=0; k < (ssize_t) rank; k++)
+            hp_matrix[j][k]-=scale*hp_matrix[column][k];
+          for (k=0; k < (ssize_t) number_vectors; k++)
+            vectors[k][j]-=(double)(scale*(long double) vectors[k][column]);
+        }
+  }
+  for (j=(ssize_t) rank-1; j >= 0; j--)
+    if (columns[j] != rows[j])
+      for (i=0; i < (ssize_t) rank; i++)
+        GaussJordanSwapLD(hp_matrix[i][columns[j]],hp_matrix[i][rows[j]]);
+  /*
+    Copy back the result to the original matrix.
+  */
+  for (i=0; i < (ssize_t) rank; i++)
+    for (j=0; j < (ssize_t) rank; j++)
+      matrix[i][j]=(double)hp_matrix[i][j];
+  /*
+    Free resources.
+  */
+  for (i=0; i < (ssize_t) rank; i++)
+    hp_matrix[i]=(long double *) RelinquishMagickMemory(hp_matrix[i]);
+  hp_matrix=(long double **) RelinquishMagickMemory(hp_matrix);
+  pivots=(ssize_t *) RelinquishMagickMemory(pivots);
+  rows=(ssize_t *) RelinquishMagickMemory(rows);
+  columns=(ssize_t *) RelinquishMagickMemory(columns);
+  return(MagickTrue);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
 %   M a t r i x T o I m a g e                                                 %
 %                                                                             %
 %                                                                             %
@@ -969,7 +981,7 @@ MagickExport Image *MatrixToImage(const MatrixInfo *matrix_info,
         continue;
       value=scale_factor*(value-min_value);
       *q=ClampToQuantum(value);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -1028,7 +1040,7 @@ MagickExport MagickBooleanType NullMatrix(MatrixInfo *matrix_info)
   {
     for (x=0; x < (ssize_t) matrix_info->length; x++)
     {
-      count=write(matrix_info->file,&value,sizeof(value));
+      count=MagickWrite(matrix_info->file,&value,sizeof(value));
       if (count != (ssize_t) sizeof(value))
         break;
     }

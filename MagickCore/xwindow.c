@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -112,7 +112,7 @@
 */
 #define XBlueGamma(color) ClampToQuantum(blue_gamma == 1.0 ? (double) \
   (color) : ((pow((QuantumScale*(double) (color)),1.0* \
-  PerceptibleReciprocal((double) blue_gamma))*(double) QuantumRange)))
+  MagickSafeReciprocal((double) blue_gamma))*(double) QuantumRange)))
 #define XGammaPacket(map,color)  (size_t) (map->base_pixel+ \
   ((ScaleQuantumToShort(XRedGamma((color)->red))*map->red_max/65535L)* \
     map->red_mult)+ \
@@ -129,10 +129,10 @@
     map->blue_mult))
 #define XGreenGamma(color) ClampToQuantum(green_gamma == 1.0 ? (double) \
   (color) : ((pow((QuantumScale*(double) (color)),1.0* \
-  PerceptibleReciprocal((double) green_gamma))*(double) QuantumRange)))
+  MagickSafeReciprocal((double) green_gamma))*(double) QuantumRange)))
 #define XRedGamma(color) ClampToQuantum(red_gamma == 1.0 ? (double) \
   (color) : ((pow((QuantumScale*(double) (color)),1.0* \
-  PerceptibleReciprocal((double) red_gamma))*(double) QuantumRange)))
+  MagickSafeReciprocal((double) red_gamma))*(double) QuantumRange)))
 #define XStandardPixel(map,color)  (size_t) (map->base_pixel+ \
   (((color)->red*map->red_max/65535L)*map->red_mult)+ \
   (((color)->green*map->green_max/65535L)*map->green_mult)+ \
@@ -611,7 +611,7 @@ MagickPrivate MagickBooleanType XAnnotateImage(Display *display,
           if (annotate_info->stencil == BackgroundStencil)
             SetPixelAlpha(annotate_image,TransparentAlpha,q);
         }
-      q+=GetPixelChannels(annotate_image);
+      q+=(ptrdiff_t) GetPixelChannels(annotate_image);
     }
     if (SyncCacheViewAuthenticPixels(annotate_view,exception) == MagickFalse)
       break;
@@ -1155,7 +1155,7 @@ MagickPrivate XVisualInfo *XBestVisualInfo(Display *display,
   XStandardColormap *map_info,XResourceInfo *resource_info)
 {
 #define MaxStandardColormaps  7
-#define XVisualColormapSize(visual_info) MagickMin((unsigned int) (\
+#define XVisualColormapSize(visual_info) MagickMin((unsigned long int) (\
   (visual_info->klass == TrueColor) || (visual_info->klass == DirectColor) ? \
    visual_info->red_mask | visual_info->green_mask | visual_info->blue_mask : \
    (unsigned long) visual_info->colormap_size),1UL << visual_info->depth)
@@ -2051,9 +2051,9 @@ MagickPrivate void XDisplayImageInfo(Display *display,
     undo_image=GetPreviousImageInList(undo_image);
   }
   (void) FormatLocaleFile(file,"Undo Edit Cache\n  levels: %u\n",levels);
-  (void) FormatLocaleFile(file,"  bytes: %.20gmb\n",(double)
+  (void) FormatLocaleFile(file,"  bytes: %.17gmb\n",(double)
     ((bytes+(1 << 19)) >> 20));
-  (void) FormatLocaleFile(file,"  limit: %.20gmb\n\n",(double)
+  (void) FormatLocaleFile(file,"  limit: %.17gmb\n\n",(double)
     resource_info->undo_cache);
   /*
     Write info about the image to a file.
@@ -2234,12 +2234,12 @@ static void XDitherImage(Image *image,XImage *ximage,ExceptionInfo *exception)
         (((size_t) color.green & 0xe0) >> 3) |
         (((size_t) color.blue & 0xc0) >> 6));
       *q++=(char) pixel;
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
       j++;
       if (j == 16)
         j=0;
     }
-    q+=scanline_pad;
+    q+=(ptrdiff_t) scanline_pad;
     i++;
     if (i == 2)
       i=0;
@@ -2510,7 +2510,7 @@ MagickPrivate MagickBooleanType XDrawImage(Display *display,
           SetPixelAlpha(draw_image,(Quantum) (draw_info->stencil ==
             OpaqueStencil ? OpaqueAlpha : TransparentAlpha),q);
         }
-      q+=GetPixelChannels(draw_image);
+      q+=(ptrdiff_t) GetPixelChannels(draw_image);
     }
     if (SyncCacheViewAuthenticPixels(draw_view,exception) == MagickFalse)
       break;
@@ -2615,7 +2615,7 @@ MagickPrivate MagickBooleanType XDrawImage(Display *display,
     {
       if (GetPixelAlpha(image,q) != TransparentAlpha)
         SetPixelAlpha(draw_image,OpaqueAlpha,q);
-      q+=GetPixelChannels(draw_image);
+      q+=(ptrdiff_t) GetPixelChannels(draw_image);
     }
     if (SyncCacheViewAuthenticPixels(draw_view,exception) == MagickFalse)
       break;
@@ -3607,7 +3607,7 @@ MagickExport void XGetResourceInfo(const ImageInfo *image_info,
   resource_info->title=XGetResourceClass(database,client_name,"title",
     (char *) NULL);
   resource_value=XGetResourceClass(database,client_name,"undoCache",
-    (char *) "256");
+    (char *) "4096");
   resource_info->undo_cache=(unsigned int) StringToUnsignedLong(resource_value);
   resource_value=XGetResourceClass(database,client_name,"update",
     (char *) "False");
@@ -4084,10 +4084,10 @@ static Image *XGetWindowImage(Display *display,const Window window,
       crop_info.y=0;
     }
   display_width=XDisplayWidth(display,XDefaultScreen(display));
-  if ((crop_info.x+(int) crop_info.width) > display_width)
+  if ((int) (crop_info.x+(int) crop_info.width) > display_width)
     crop_info.width=(size_t) (display_width-crop_info.x);
   display_height=XDisplayHeight(display,XDefaultScreen(display));
-  if ((crop_info.y+(int) crop_info.height) > display_height)
+  if ((int) (crop_info.y+(int) crop_info.height) > display_height)
     crop_info.height=(size_t) (display_height-crop_info.y);
   /*
     Initialize window info attributes.
@@ -4404,7 +4404,7 @@ static Image *XGetWindowImage(Display *display,const Window window,
                   index=(pixel >> blue_shift) & blue_mask;
                   SetPixelBlue(composite_image,
                     ScaleShortToQuantum(colors[index].blue),q);
-                  q+=GetPixelChannels(composite_image);
+                  q+=(ptrdiff_t) GetPixelChannels(composite_image);
                 }
                 status=SyncCacheViewAuthenticPixels(composite_view,exception)
                   == MagickFalse ? 0 : 1;
@@ -4436,7 +4436,7 @@ static Image *XGetWindowImage(Display *display,const Window window,
                     color=(65535UL*color)/blue_mask;
                   SetPixelBlue(composite_image,ScaleShortToQuantum(
                     (unsigned short) color),q);
-                  q+=GetPixelChannels(composite_image);
+                  q+=(ptrdiff_t) GetPixelChannels(composite_image);
                 }
                 status=SyncCacheViewAuthenticPixels(composite_view,exception)
                   == MagickFalse ? 0 : 1;
@@ -4484,7 +4484,7 @@ static Image *XGetWindowImage(Display *display,const Window window,
                 SetPixelIndex(composite_image,index,q);
                 SetPixelViaPixelInfo(composite_image,
                   composite_image->colormap+(ssize_t) index,q);
-                q+=GetPixelChannels(composite_image);
+                q+=(ptrdiff_t) GetPixelChannels(composite_image);
               }
               status=SyncCacheViewAuthenticPixels(composite_view,exception)
                 == MagickFalse ? 0 : 1;
@@ -5064,10 +5064,7 @@ MagickExport Image *XImportImage(const ImageInfo *image_info,
   image=XGetWindowImage(display,target,ximage_info->borders,
     ximage_info->descend ? 1U : 0U,exception);
   (void) XUngrabServer(display);
-  if (image == (Image *) NULL)
-    ThrowXWindowException(XServerError,"UnableToReadXWindowImage",
-      image_info->filename)
-  else
+  if (image != (Image *) NULL)
     {
       (void) CopyMagickString(image->filename,image_info->filename,
         MagickPathExtent);
@@ -5091,7 +5088,7 @@ MagickExport Image *XImportImage(const ImageInfo *image_info,
         {
           if (*image_info->filename == '\0')
             (void) CopyMagickString(image->filename,(char *) window_name.value,
-              (size_t) window_name.nitems+1);
+              (size_t) MagickMin(window_name.nitems+1,MagickPathExtent));
           (void) XFree((void *) window_name.value);
         }
     }
@@ -5936,7 +5933,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
         resource_info->image_info->texture != (char *) NULL ?
         resource_info->image_info->texture : "pattern:checkerboard",
         MagickPathExtent);
-      (void) FormatLocaleString(size,MagickPathExtent,"%.20gx%.20g",(double)
+      (void) FormatLocaleString(size,MagickPathExtent,"%.17gx%.17g",(double)
         image->columns,(double) image->rows);
       image_info->size=ConstantString(size);
       pattern=ReadImage(image_info,exception);
@@ -6003,11 +6000,11 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
               bit=0;
               byte=0;
             }
-          p+=GetPixelChannels(canvas);
+          p+=(ptrdiff_t) GetPixelChannels(canvas);
         }
         if (bit != 0)
           *q=byte >> (8-bit);
-        q+=scanline_pad;
+        q+=(ptrdiff_t) scanline_pad;
       }
     }
   else
@@ -6060,9 +6057,9 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                   break;
                 }
               }
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6100,9 +6097,9 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                   break;
                 }
               }
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6128,9 +6125,9 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
             {
               pixel=pixels[(ssize_t) GetPixelIndex(canvas,p)];
               *q++=(unsigned char) pixel;
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6160,9 +6157,9 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                 *q++=(unsigned char) (pixel & 0xff);
                 pixel>>=8;
               }
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6217,9 +6214,9 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                   break;
                 }
               }
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6258,9 +6255,9 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                   break;
                 }
               }
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6286,9 +6283,9 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
             {
               pixel=XGammaPixel(canvas,map_info,p);
               *q++=(unsigned char) pixel;
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6323,7 +6320,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                       *q++=ScaleQuantumToChar(XRedGamma(
                         GetPixelRed(canvas,p)));
                       *q++=0;
-                      p+=GetPixelChannels(canvas);
+                      p+=(ptrdiff_t) GetPixelChannels(canvas);
                     }
                     continue;
                   }
@@ -6333,7 +6330,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                   *q++=ScaleQuantumToChar((Quantum) GetPixelGreen(canvas,p));
                   *q++=ScaleQuantumToChar((Quantum) GetPixelRed(canvas,p));
                   *q++=0;
-                  p+=GetPixelChannels(canvas);
+                  p+=(ptrdiff_t) GetPixelChannels(canvas);
                 }
               }
             }
@@ -6367,7 +6364,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                         *q++=ScaleQuantumToChar(XBlueGamma(
                           GetPixelBlue(canvas,p)));
                         *q++=0;
-                        p+=GetPixelChannels(canvas);
+                        p+=(ptrdiff_t) GetPixelChannels(canvas);
                       }
                       continue;
                     }
@@ -6377,7 +6374,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                     *q++=ScaleQuantumToChar((Quantum) GetPixelGreen(canvas,p));
                     *q++=ScaleQuantumToChar((Quantum) GetPixelBlue(canvas,p));
                     *q++=0;
-                    p+=GetPixelChannels(canvas);
+                    p+=(ptrdiff_t) GetPixelChannels(canvas);
                   }
                 }
               }
@@ -6407,9 +6404,9 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                       *q++=(unsigned char) (pixel & 0xff);
                       pixel>>=8;
                     }
-                    p+=GetPixelChannels(canvas);
+                    p+=(ptrdiff_t) GetPixelChannels(canvas);
                   }
-                  q+=scanline_pad;
+                  q+=(ptrdiff_t) scanline_pad;
                 }
               }
           break;
@@ -6443,11 +6440,11 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
               bit=0;
               byte=0;
             }
-          p+=GetPixelChannels(canvas);
+          p+=(ptrdiff_t) GetPixelChannels(canvas);
         }
         if (bit != 0)
           *q=byte >> (8-bit);
-        q+=scanline_pad;
+        q+=(ptrdiff_t) scanline_pad;
       }
     }
   canvas_view=DestroyCacheView(canvas_view);
@@ -6554,7 +6551,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
         resource_info->image_info->texture != (char *) NULL ?
         resource_info->image_info->texture : "pattern:checkerboard",
         MagickPathExtent);
-      (void) FormatLocaleString(size,MagickPathExtent,"%.20gx%.20g",(double)
+      (void) FormatLocaleString(size,MagickPathExtent,"%.17gx%.17g",(double)
         image->columns,(double) image->rows);
       image_info->size=ConstantString(size);
       pattern=ReadImage(image_info,exception);
@@ -6621,11 +6618,11 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
               bit=0;
               byte=0;
             }
-          p+=GetPixelChannels(canvas);
+          p+=(ptrdiff_t) GetPixelChannels(canvas);
         }
         if (bit != 0)
           *q=byte << (8-bit);
-        q+=scanline_pad;
+        q+=(ptrdiff_t) scanline_pad;
       }
     }
   else
@@ -6679,9 +6676,9 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                   break;
                 }
               }
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6720,9 +6717,9 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                   break;
                 }
               }
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6748,9 +6745,9 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
             {
               pixel=pixels[(ssize_t) GetPixelIndex(canvas,p)];
               *q++=(unsigned char) pixel;
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6786,9 +6783,9 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
               }
               for (k=0; k < (int) bytes_per_pixel; k++)
                 *q++=channel[k];
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6843,9 +6840,9 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                   break;
                 }
               }
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6884,9 +6881,9 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                   break;
                 }
               }
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6912,9 +6909,9 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
             {
               pixel=XGammaPixel(canvas,map_info,p);
               *q++=(unsigned char) pixel;
-              p+=GetPixelChannels(canvas);
+              p+=(ptrdiff_t) GetPixelChannels(canvas);
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           break;
         }
@@ -6949,7 +6946,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                         GetPixelGreen(canvas,p)));
                       *q++=ScaleQuantumToChar(XBlueGamma(
                         GetPixelBlue(canvas,p)));
-                      p+=GetPixelChannels(canvas);
+                      p+=(ptrdiff_t) GetPixelChannels(canvas);
                     }
                     continue;
                   }
@@ -6959,7 +6956,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                   *q++=ScaleQuantumToChar((Quantum) GetPixelRed(canvas,p));
                   *q++=ScaleQuantumToChar((Quantum) GetPixelGreen(canvas,p));
                   *q++=ScaleQuantumToChar((Quantum) GetPixelBlue(canvas,p));
-                  p+=GetPixelChannels(canvas);
+                  p+=(ptrdiff_t) GetPixelChannels(canvas);
                 }
               }
             }
@@ -6993,7 +6990,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                           GetPixelGreen(canvas,p)));
                         *q++=ScaleQuantumToChar(XRedGamma(
                           GetPixelRed(canvas,p)));
-                        p+=GetPixelChannels(canvas);
+                        p+=(ptrdiff_t) GetPixelChannels(canvas);
                       }
                       continue;
                     }
@@ -7003,7 +7000,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                     *q++=ScaleQuantumToChar((Quantum) GetPixelBlue(canvas,p));
                     *q++=ScaleQuantumToChar((Quantum) GetPixelGreen(canvas,p));
                     *q++=ScaleQuantumToChar((Quantum) GetPixelRed(canvas,p));
-                    p+=GetPixelChannels(canvas);
+                    p+=(ptrdiff_t) GetPixelChannels(canvas);
                   }
                 }
               }
@@ -7038,9 +7035,9 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                     }
                     for (k=0; k < (int) bytes_per_pixel; k++)
                       *q++=channel[k];
-                    p+=GetPixelChannels(canvas);
+                    p+=(ptrdiff_t) GetPixelChannels(canvas);
                   }
-                  q+=scanline_pad;
+                  q+=(ptrdiff_t) scanline_pad;
                 }
               }
           break;
@@ -7074,11 +7071,11 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
               bit=0;
               byte=0;
             }
-          p+=GetPixelChannels(canvas);
+          p+=(ptrdiff_t) GetPixelChannels(canvas);
         }
         if (bit != 0)
           *q=byte << (8-bit);
-        q+=scanline_pad;
+        q+=(ptrdiff_t) scanline_pad;
       }
     }
   canvas_view=DestroyCacheView(canvas_view);
@@ -7196,7 +7193,7 @@ MagickPrivate void XMakeMagnifyImage(Display *display,XWindows *windows,
       while ((1 << i) <= (int) magnify)
         i++;
       (void) FormatLocaleString(windows->magnify.name,MagickPathExtent,
-        "Magnify %.20gX",(double) i);
+        "Magnify %.17gX",(double) i);
       status=XStringListToTextProperty(&windows->magnify.name,1,&window_name);
       if (status != False)
         {
@@ -7312,7 +7309,7 @@ MagickPrivate void XMakeMagnifyImage(Display *display,XWindows *windows,
                   }
                 if (q_bit != 0)
                   *q=byte >> (8-q_bit);
-                q+=scanline_pad;
+                q+=(ptrdiff_t) scanline_pad;
               }
             }
             y++;
@@ -7384,7 +7381,7 @@ MagickPrivate void XMakeMagnifyImage(Display *display,XWindows *windows,
                   }
                 if (q_bit != 0)
                   *q=byte << (8-q_bit);
-                q+=scanline_pad;
+                q+=(ptrdiff_t) scanline_pad;
               }
             }
             y++;
@@ -7420,7 +7417,7 @@ MagickPrivate void XMakeMagnifyImage(Display *display,XWindows *windows,
                 *q++=(*p);
               p++;
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           y++;
         }
@@ -7453,9 +7450,9 @@ MagickPrivate void XMakeMagnifyImage(Display *display,XWindows *windows,
               for (l=0; l < magnify; l++)
                 for (m=0; m < bytes_per_pixel; m++)
                   *q++=(*(p+m));
-              p+=bytes_per_pixel;
+              p+=(ptrdiff_t) bytes_per_pixel;
             }
-            q+=scanline_pad;
+            q+=(ptrdiff_t) scanline_pad;
           }
           y++;
         }
@@ -7819,22 +7816,22 @@ MagickPrivate void XMakeStandardColormap(Display *display,
               {
                 for (i=0; i < (ssize_t) number_colors; i++)
                 {
-                  SetPixelRed(affinity_image,0,q);
+                  SetPixelRed(affinity_image,(Quantum) 0,q);
                   if (map_info->red_max != 0)
                     SetPixelRed(affinity_image,ScaleXToQuantum((size_t)
                       (i/(ssize_t) map_info->red_mult),map_info->red_max),q);
-                  SetPixelGreen(affinity_image,0,q);
+                  SetPixelGreen(affinity_image,(Quantum) 0,q);
                   if (map_info->green_max != 0)
                     SetPixelGreen(affinity_image,ScaleXToQuantum((size_t)
                       ((i/(ssize_t) map_info->green_mult) % (ssize_t)
                       (map_info->green_max+1)),map_info->green_max),q);
-                  SetPixelBlue(affinity_image,0,q);
+                  SetPixelBlue(affinity_image,(Quantum) 0,q);
                   if (map_info->blue_max != 0)
                     SetPixelBlue(affinity_image,ScaleXToQuantum((size_t)
                       (i % (ssize_t) map_info->green_mult),map_info->blue_max),
                       q);
                   SetPixelAlpha(affinity_image,TransparentAlpha,q);
-                  q+=GetPixelChannels(affinity_image);
+                  q+=(ptrdiff_t) GetPixelChannels(affinity_image);
                 }
                 (void) SyncAuthenticPixels(affinity_image,exception);
                 (void) RemapImage(resource_info->quantize_info,image,
@@ -8021,8 +8018,10 @@ MagickPrivate void XMakeStandardColormap(Display *display,
               break;
             for (x=(int) image->columns-1; x >= 0; x--)
             {
-              diversity[(ssize_t) GetPixelIndex(image,p)].count++;
-              p+=GetPixelChannels(image);
+              ssize_t index = (ssize_t) GetPixelIndex(image,p);
+              if (index < (ssize_t) image->colors)
+                diversity[index].count++;
+              p+=(ptrdiff_t) GetPixelChannels(image);
             }
           }
           image_view=DestroyCacheView(image_view);
@@ -9187,7 +9186,7 @@ MagickPrivate MagickBooleanType XRenderImage(Image *image,
           atan2(draw_info->affine.rx,draw_info->affine.sx);
     }
   (void) FormatLocaleString(annotate_info.geometry,MagickPathExtent,
-    "%.20gx%.20g%+.20g%+.20g",(double) width,(double) height,
+    "%.17gx%.17g%+.20g%+.20g",(double) width,(double) height,
     ceil(offset->x-0.5),ceil(offset->y-metrics->ascent-metrics->descent+
     draw_info->interline_spacing-0.5));
   pixel.pen_color.red=ScaleQuantumToShort(
@@ -9340,7 +9339,7 @@ static Window XSelectWindow(Display *display,RectangleInfo *crop_info)
   annotate_context=XCreateGC(display,root_window,(size_t) (GCBackground |
     GCForeground | GCFunction | GCSubwindowMode),&context_values);
   if (annotate_context == (GC) NULL)
-    return(MagickFalse);
+    return((Window) NULL);
   /*
     Grab the pointer using target cursor.
   */
@@ -9443,6 +9442,8 @@ static Window XSelectWindow(Display *display,RectangleInfo *crop_info)
     }
   if ((crop_info->width != 0) && (crop_info->height != 0))
     target_window=root_window;
+  if (event.xbutton.button == Button3)
+    target_window=(Window) NULL;
   return(target_window);
 }
 
@@ -9615,7 +9616,7 @@ MagickPrivate void XUserPreferences(XResourceInfo *resource_info)
   value=resource_info->gamma_correct ? "True" : "False";
   XrmPutStringResource(&preferences_database,specifier,(char *) value);
   (void) FormatLocaleString(specifier,MagickPathExtent,"%s.undoCache",client_name);
-  (void) FormatLocaleString(cache,MagickPathExtent,"%.20g",(double)
+  (void) FormatLocaleString(cache,MagickPathExtent,"%.17g",(double)
     resource_info->undo_cache);
   XrmPutStringResource(&preferences_database,specifier,cache);
   (void) FormatLocaleString(specifier,MagickPathExtent,"%s.usePixmap",client_name);
@@ -9709,7 +9710,8 @@ MagickPrivate void XWarning(const ExceptionType magick_unused(warning),
   (void) CopyMagickString(text,reason,MagickPathExtent);
   (void) ConcatenateMagickString(text,":",MagickPathExtent);
   windows=XSetWindows((XWindows *) ~0);
-  XNoticeWidget(windows->display,windows,text,(char *) description);
+  if (windows != (XWindows *) NULL)
+     XNoticeWidget(windows->display,windows,text,(char *) description);
 }
 
 /*

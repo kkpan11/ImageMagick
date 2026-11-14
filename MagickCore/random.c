@@ -22,7 +22,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -342,7 +342,7 @@ static ssize_t ReadRandom(int file,unsigned char *source,size_t length)
           continue;
         return(-1);
       }
-    q+=count;
+    q+=(ptrdiff_t) count;
     offset+=count;
   }
   return(offset);
@@ -372,6 +372,19 @@ static StringInfo *GenerateEntropicChaos(RandomInfo *random_info)
   */
   entropy=AcquireStringInfo(0);
   LockSemaphoreInfo(random_info->semaphore);
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+  /* Deterministic entropy for fuzzing */
+  {
+    unsigned char
+      *datum;
+
+    SetStringInfoLength(entropy,MaxEntropyExtent);
+    datum=GetStringInfoDatum(entropy);
+    (void) memset(datum,0x42,MaxEntropyExtent);
+    UnlockSemaphoreInfo(random_info->semaphore);
+    return(entropy);
+  }
+#endif
 #if defined(MAGICKCORE_HAVE_GETENTROPY)
   {
     int
@@ -533,13 +546,13 @@ static StringInfo *GenerateEntropicChaos(RandomInfo *random_info)
     filename=AcquireString("/dev/urandom");
     device=StringToStringInfo(filename);
     device=DestroyStringInfo(device);
-    file=open_utf8(filename,O_RDONLY | O_BINARY,0);
+    file=open_utf8(filename,O_RDONLY | O_CLOEXEC | O_BINARY,0);
     filename=DestroyString(filename);
     if (file != -1)
       {
         SetStringInfoLength(chaos,MaxEntropyExtent);
         count=ReadRandom(file,GetStringInfoDatum(chaos),MaxEntropyExtent);
-        (void) close(file);
+        (void) close_utf8(file);
         SetStringInfoLength(chaos,(size_t) count);
         ConcatenateStringInfo(entropy,chaos);
       }
@@ -551,20 +564,20 @@ static StringInfo *GenerateEntropicChaos(RandomInfo *random_info)
         filename=AcquireString("/dev/random");
         device=StringToStringInfo(filename);
         device=DestroyStringInfo(device);
-        file=open_utf8(filename,O_RDONLY | O_BINARY,0);
+        file=open_utf8(filename,O_RDONLY | O_CLOEXEC | O_BINARY,0);
         filename=DestroyString(filename);
         if (file == -1)
           {
             filename=AcquireString("/dev/srandom");
             device=StringToStringInfo(filename);
             device=DestroyStringInfo(device);
-            file=open_utf8(filename,O_RDONLY | O_BINARY,0);
+            file=open_utf8(filename,O_RDONLY | O_CLOEXEC | O_BINARY,0);
           }
         if (file != -1)
           {
             SetStringInfoLength(chaos,MaxEntropyExtent);
             count=ReadRandom(file,GetStringInfoDatum(chaos),MaxEntropyExtent);
-            (void) close(file);
+            (void) close_utf8(file);
             SetStringInfoLength(chaos,(size_t) count);
             ConcatenateStringInfo(entropy,chaos);
           }
@@ -884,6 +897,11 @@ MagickExport void SetRandomKey(RandomInfo *random_info,const size_t length,
   assert(random_info != (RandomInfo *) NULL);
   if (length == 0)
     return;
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+  /* Deterministic random key for fuzzing */
+  (void) memset(key,0x42,length);
+  return;
+#endif
   LockSemaphoreInfo(random_info->semaphore);
   signature_info=random_info->signature_info;
   datum=GetStringInfoDatum(random_info->reservoir);
@@ -903,7 +921,7 @@ MagickExport void SetRandomKey(RandomInfo *random_info,const size_t length,
     IncrementRandomNonce(random_info->nonce);
     (void) memcpy(p,GetStringInfoDatum(GetSignatureDigest(
       signature_info)),GetSignatureDigestsize(signature_info));
-    p+=GetSignatureDigestsize(signature_info);
+    p+=(ptrdiff_t) GetSignatureDigestsize(signature_info);
     i-=GetSignatureDigestsize(signature_info);
   }
   if (i != 0)

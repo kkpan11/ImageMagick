@@ -18,13 +18,13 @@
 %                                August 2009                                  %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2009 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -322,7 +322,7 @@ static HCubeInfo *ClassifyImageColors(const Image *image,
           node_info->number_unique++;
           cube_info->colors++;
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     proceed=SetImageProgress(image,EvaluateImageTag,(MagickOffsetType) y,
       image->rows);
@@ -784,7 +784,7 @@ static MagickBooleanType CheckImageColors(const Image *image,
           if (cube_info->colors > max_colors)
             break;
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (x < (ssize_t) image->columns)
       break;
@@ -853,8 +853,8 @@ MagickExport MagickBooleanType IsHistogramImage(const Image *image,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  IsPaletteImage() returns MagickTrue if the image is PseudoClass and has 256
-%  unique colors or less.
+%  IsPaletteImage() returns MagickTrue if the image is PseudoClass and has
+%  MaxColormapSize unique colors or less.
 %
 %  The format of the IsPaletteImage method is:
 %
@@ -873,7 +873,7 @@ MagickExport MagickBooleanType IsPaletteImage(const Image *image)
     (void) LogMagickEvent(TraceEvent,GetMagickModule(),"%s",image->filename);
   if (image->storage_class != PseudoClass)
     return(MagickFalse);
-  return((image->colors <= 256) ? MagickTrue : MagickFalse);
+  return((image->colors <= MaxColormapSize) ? MagickTrue : MagickFalse);
 }
 
 /*
@@ -1231,10 +1231,14 @@ MagickExport Image *UniqueImageColors(const Image *image,
     return((Image *) NULL);
   unique_image=CloneImage(image,cube_info->colors,1,MagickTrue,exception);
   if (unique_image == (Image *) NULL)
-    return(unique_image);
+    {
+      cube_info=DestroyHCubeInfo(image,cube_info);
+      return(unique_image);
+    }
   if (SetImageStorageClass(unique_image,DirectClass,exception) == MagickFalse)
     {
       unique_image=DestroyImage(unique_image);
+      cube_info=DestroyHCubeInfo(image,cube_info);
       return((Image *) NULL);
     }
   unique_view=AcquireAuthenticCacheView(unique_image,exception);

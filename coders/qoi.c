@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -301,9 +301,9 @@ static Image *ReadQOIImage(const ImageInfo *image_info,ExceptionInfo *exception)
         vg=(b & ~QOI_MASK_2) - 32;
         if ((b=ReadBlobByte(image)) == EOF)
           break;
-        px.rgba.r+=vg - 8 + ((b >> 4) & 0x0f);
-        px.rgba.g+=vg;
-        px.rgba.b+=vg - 8 +  (b       & 0x0f);
+        px.rgba.r+=(unsigned char) (vg - 8 + ((b >> 4) & 0x0f));
+        px.rgba.g+=(unsigned char) vg;
+        px.rgba.b+=(unsigned char) (vg - 8 +  (b       & 0x0f));
       }
     else if ((b & QOI_MASK_2) == QOI_OP_RUN)
       {
@@ -320,7 +320,7 @@ static Image *ReadQOIImage(const ImageInfo *image_info,ExceptionInfo *exception)
           if (channels == 4)
             SetPixelAlpha(image,ScaleCharToQuantum((unsigned char) px.rgba.a),q);
         }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
       i++;
     } while (run-- > 0);
     status=SetImageProgress(image,LoadImageTag,(MagickOffsetType) i,
@@ -487,7 +487,7 @@ static MagickBooleanType WriteQOIImage(const ImageInfo *image_info,Image *image,
         (quantum_type == IndexAlphaQuantum))
       channels=4;
     else
-      ThrowWriterException(CoderError,"ImageTypeNotSupported");
+      ThrowWriterException(ImageError,"ImageTypeNotSupported");
   /*
     Write QOI header.
   */
@@ -519,7 +519,7 @@ static MagickBooleanType WriteQOIImage(const ImageInfo *image_info,Image *image,
     px.rgba.b=ScaleQuantumToChar(GetPixelBlue(image,p));
     if (channels == 4)
       px.rgba.a=ScaleQuantumToChar(GetPixelAlpha(image,p));
-    p+=GetPixelChannels(image);
+    p+=(ptrdiff_t) GetPixelChannels(image);
 
     if (pp.v == px.v)
       {
@@ -598,8 +598,7 @@ static MagickBooleanType WriteQOIImage(const ImageInfo *image_info,Image *image,
   /*
     Write the QOI end marker: seven 0x00 bytes followed by 0x01.
   */
-  for (i=0; i < 7; i++)
-    (void) WriteBlobByte(image,0x00);
+  (void) WriteBlobPadding(image,7,'\0');
   (void) WriteBlobByte(image,0x01);
   if (CloseBlob(image) == MagickFalse)
     status=MagickFalse;

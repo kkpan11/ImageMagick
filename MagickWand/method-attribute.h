@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -28,9 +28,6 @@ extern "C" {
 #    define _MAGICKDLL_
 #  endif
 #  if defined(_MAGICKDLL_)
-#    if defined(_VISUALC_)
-#      pragma warning( disable: 4273 )  /* Disable the dll linkage warnings */
-#    endif
 #    if !defined(_MAGICKLIB_)
 #      if defined(__clang__) || defined(__GNUC__)
 #        define WandExport __attribute__ ((dllimport))

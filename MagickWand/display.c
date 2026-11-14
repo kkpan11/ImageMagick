@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -264,8 +264,10 @@ WandExport MagickBooleanType DisplayImageCommand(ImageInfo *image_info,
 }
 #define ThrowDisplayException(asperity,tag,option) \
 { \
-  (void) ThrowMagickException(exception,GetMagickModule(),asperity,tag,"`%s'", \
-    option); \
+  char *message = GetExceptionMessage(errno);     \
+  (void) ThrowMagickException(exception,GetMagickModule(),asperity,tag, \
+    "`%s'",option == (char *) NULL ? message : option); \
+  message=DestroyString(message); \
   DestroyDisplay(); \
   return(MagickFalse); \
 }
@@ -297,7 +299,7 @@ WandExport MagickBooleanType DisplayImageCommand(ImageInfo *image_info,
     fire,
     nostdin,
     pend,
-    respect_parenthesis;
+    respect_parentheses;
 
   MagickStatusType
     status;
@@ -356,7 +358,7 @@ WandExport MagickBooleanType DisplayImageCommand(ImageInfo *image_info,
   NewImageStack();
   option=(char *) NULL;
   pend=MagickFalse;
-  respect_parenthesis=MagickFalse;
+  respect_parentheses=MagickFalse;
   nostdin=MagickFalse;
   resource_database=(XrmDatabase) NULL;
   (void) memset(&resource_info,0,sizeof(resource_info));
@@ -367,12 +369,12 @@ WandExport MagickBooleanType DisplayImageCommand(ImageInfo *image_info,
   status=ExpandFilenames(&argc,&argv);
   if (status == MagickFalse)
     ThrowDisplayException(ResourceLimitError,"MemoryAllocationFailed",
-      GetExceptionMessage(errno));
+      (char *) NULL);
   image_marker=(size_t *) AcquireQuantumMemory((size_t) argc+1UL,
     sizeof(*image_marker));
   if (image_marker == (size_t *) NULL)
     ThrowDisplayException(ResourceLimitError,"MemoryAllocationFailed",
-      GetExceptionMessage(errno));
+      (char *) NULL);
   for (i=0; i <= (ssize_t) argc; i++)
     image_marker[i]=(size_t) argc;
   /*
@@ -485,7 +487,7 @@ WandExport MagickBooleanType DisplayImageCommand(ImageInfo *image_info,
         */
         FireImageStack(MagickFalse,MagickFalse,pend);
         filename=option;
-        if ((LocaleCompare(filename,"--") == 0) && (i < (ssize_t) (argc-1)))
+        if ((LocaleCompare(filename,"--") == 0) && (i < ((ssize_t) argc-1)))
           {
             option=argv[++i];
             filename=option;
@@ -503,7 +505,7 @@ WandExport MagickBooleanType DisplayImageCommand(ImageInfo *image_info,
         image_list=CloneImageList(image,exception);
         if (image_list == (Image *) NULL)
           ThrowDisplayException(ResourceLimitError,"MemoryAllocationFailed",
-            GetExceptionMessage(errno));
+            (char *) NULL);
         display_image=image_list;
         do
         {
@@ -632,7 +634,7 @@ WandExport MagickBooleanType DisplayImageCommand(ImageInfo *image_info,
             if ((state & FormerImageState) != 0)
               {
 
-                for (i=1; i < (ssize_t) (argc-2); i++)
+                for (i=1; i < ((ssize_t) argc-2); i++)
                   if (last_image == image_marker[i])
                     break;
                 image_number=(ssize_t) image_marker[i]+1;
@@ -1547,7 +1549,7 @@ WandExport MagickBooleanType DisplayImageCommand(ImageInfo *image_info,
           }
         if (LocaleNCompare("respect-parentheses",option+1,17) == 0)
           {
-            respect_parenthesis=(*option == '-') ? MagickTrue : MagickFalse;
+            respect_parentheses=(*option == '-') ? MagickTrue : MagickFalse;
             break;
           }
         if (LocaleCompare("roll",option+1) == 0)

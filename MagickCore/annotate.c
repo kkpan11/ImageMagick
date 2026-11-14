@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -83,6 +83,7 @@
 #include "MagickCore/utility-private.h"
 #include "MagickCore/xwindow.h"
 #include "MagickCore/xwindow-private.h"
+#include "coders/ghostscript-private.h"
 #if defined(MAGICKCORE_FREETYPE_DELEGATE)
 #if defined(__MINGW32__)
 #  undef interface
@@ -255,15 +256,15 @@ MagickExport MagickBooleanType AnnotateImage(Image *image,
   RectangleInfo
     geometry;
 
+  size_t
+    height,
+    number_lines;
+
   ssize_t
     i;
 
   TypeMetric
     metrics;
-
-  size_t
-    height,
-    number_lines;
 
   assert(image != (Image *) NULL);
   assert(image->signature == MagickCoreSignature);
@@ -337,15 +338,15 @@ MagickExport MagickBooleanType AnnotateImage(Image *image,
     /*
       Position text relative to image.
     */
-    annotate_info->affine.tx=geometry_info.xi-image->page.x;
-    annotate_info->affine.ty=geometry_info.psi-image->page.y;
+    annotate_info->affine.tx=geometry_info.xi-(double) image->page.x;
+    annotate_info->affine.ty=geometry_info.psi-(double) image->page.y;
     (void) CloneString(&annotate->text,textlist[i]);
     if ((metrics.width == 0) || (annotate->gravity != NorthWestGravity))
       (void) GetTypeMetrics(image,annotate,&metrics,exception);
-    height=CastDoubleToUnsigned(metrics.ascent-metrics.descent+0.5);
+    height=CastDoubleToSizeT(metrics.ascent-metrics.descent+0.5);
     if (height == 0)
-      height=draw_info->pointsize;
-    height=CastDoubleToUnsigned(floor((double) height+
+      height=(size_t) draw_info->pointsize;
+    height=CastDoubleToSizeT(floor((double) height+
       draw_info->interline_spacing+0.5));
     switch (annotate->gravity)
     {
@@ -361,9 +362,9 @@ MagickExport MagickBooleanType AnnotateImage(Image *image,
         offset.x=(geometry.width == 0 ? -1.0 : 1.0)*annotate_info->affine.tx+i*
           annotate_info->affine.ry*height+annotate_info->affine.ry*
           (metrics.ascent+metrics.descent);
-        offset.y=(geometry.height == 0 ? -1.0 : 1.0)*annotate_info->affine.ty+i*
-          annotate_info->affine.sy*height+annotate_info->affine.sy*
-          metrics.ascent;
+        offset.y=(geometry.height == 0 ? -1.0 : 1.0)*annotate_info->affine.ty+
+          (metrics.bounds.y2-metrics.ascent)+i*annotate_info->affine.sy*height+
+          annotate_info->affine.sy*metrics.ascent;
         break;
       }
       case (GravityType) NorthGravity:
@@ -372,9 +373,10 @@ MagickExport MagickBooleanType AnnotateImage(Image *image,
           geometry.width/2.0+i*annotate_info->affine.ry*height-
           annotate_info->affine.sx*metrics.width/2.0+annotate_info->affine.ry*
           (metrics.ascent+metrics.descent);
-        offset.y=(geometry.height == 0 ? -1.0 : 1.0)*annotate_info->affine.ty+i*
-          annotate_info->affine.sy*height+annotate_info->affine.sy*
-          metrics.ascent-annotate_info->affine.rx*metrics.width/2.0;
+        offset.y=(geometry.height == 0 ? -1.0 : 1.0)*annotate_info->affine.ty+
+          (metrics.bounds.y2-metrics.ascent)+i*annotate_info->affine.sy*height+
+          annotate_info->affine.sy*metrics.ascent-annotate_info->affine.rx*
+          metrics.width/2.0;
         break;
       }
       case (GravityType) NorthEastGravity:
@@ -383,9 +385,10 @@ MagickExport MagickBooleanType AnnotateImage(Image *image,
           geometry.width+i*annotate_info->affine.ry*height-
           annotate_info->affine.sx*metrics.width+annotate_info->affine.ry*
           (metrics.ascent+metrics.descent)-1.0;
-        offset.y=(geometry.height == 0 ? -1.0 : 1.0)*annotate_info->affine.ty+i*
-          annotate_info->affine.sy*height+annotate_info->affine.sy*
-          metrics.ascent-annotate_info->affine.rx*metrics.width;
+        offset.y=(geometry.height == 0 ? -1.0 : 1.0)*annotate_info->affine.ty+
+          (metrics.bounds.y2-metrics.ascent)+i*annotate_info->affine.sy*height+
+          annotate_info->affine.sy*metrics.ascent-annotate_info->affine.rx*
+          metrics.width;
         break;
       }
       case (GravityType) WestGravity:
@@ -623,8 +626,8 @@ static inline char *ReplaceSpaceWithNewline(char **caption,char *space)
       if (offset >= 0)
         {
           target=AcquireString(*caption);
-          CopyMagickString(target,*caption,(size_t) offset+2);
-          ConcatenateMagickString(target,space+octets,length);
+          (void) CopyMagickString(target,*caption,(size_t) offset+2);
+          (void) ConcatenateMagickString(target,space+octets,length);
           (void) DestroyString(*caption);
           *caption=target;
           space=(*caption)+offset;
@@ -655,7 +658,7 @@ MagickExport ssize_t FormatMagickCaption(Image *image,DrawInfo *draw_info,
   q=draw_info->text;
   s=(char *) NULL;
   width=0;
-  for (p=(*caption); GetUTFCode(p) != 0; p+=GetUTFOctets(p))
+  for (p=(*caption); GetUTFCode(p) != 0; p+=(ptrdiff_t) GetUTFOctets(p))
   {
     int
       code;
@@ -670,9 +673,9 @@ MagickExport ssize_t FormatMagickCaption(Image *image,DrawInfo *draw_info,
         (IsUTFSpace(code) != MagickFalse) &&
         (IsNonBreakingUTFSpace(code) == MagickFalse))
       {
-        s=p;
         if (width > image->columns)
-          p=ReplaceSpaceWithNewline(caption,s);
+          p=ReplaceSpaceWithNewline(caption,p);
+        s=p;
       }
     for (i=0; i < (ssize_t) GetUTFOctets(p); i++)
       *q++=(*(p+i));
@@ -680,7 +683,7 @@ MagickExport ssize_t FormatMagickCaption(Image *image,DrawInfo *draw_info,
     status=GetTypeMetrics(image,draw_info,metrics,exception);
     if (status == MagickFalse)
       break;
-    width=CastDoubleToUnsigned(metrics->width+draw_info->stroke_width+0.5);
+    width=CastDoubleToSizeT(metrics->width+draw_info->stroke_width+0.5);
     if (width <= image->columns)
       continue;
     if (s != (char *) NULL)
@@ -698,9 +701,9 @@ MagickExport ssize_t FormatMagickCaption(Image *image,DrawInfo *draw_info,
                 *target;
 
               target=AcquireString(*caption);
-              CopyMagickString(target,*caption,(size_t) n+1);
-              ConcatenateMagickString(target,"\n",strlen(*caption)+1);
-              ConcatenateMagickString(target,p,strlen(*caption)+2);
+              (void) CopyMagickString(target,*caption,(size_t) n+1);
+              (void) ConcatenateMagickString(target,"\n",strlen(*caption)+1);
+              (void) ConcatenateMagickString(target,p,strlen(*caption)+2);
               (void) DestroyString(*caption);
               *caption=target;
               p=(*caption)+n;
@@ -710,7 +713,7 @@ MagickExport ssize_t FormatMagickCaption(Image *image,DrawInfo *draw_info,
     s=(char *) NULL;
   }
   n=0;
-  for (p=(*caption); GetUTFCode(p) != 0; p+=GetUTFOctets(p))
+  for (p=(*caption); GetUTFCode(p) != 0; p+=(ptrdiff_t) GetUTFOctets(p))
     if (GetUTFCode(p) == '\n')
       n++;
   return(n);
@@ -1084,9 +1087,13 @@ static MagickBooleanType RenderType(Image *image,const DrawInfo *draw_info,
       ExceptionInfo
         *sans_exception;
 
+      /*
+        Search for a default font.
+      */
       sans_exception=AcquireExceptionInfo();
-      type_info=GetTypeInfoByFamily((const char *) NULL,draw_info->style,
-        draw_info->stretch,draw_info->weight,sans_exception);
+      if (type_info == (const TypeInfo *) NULL)
+        type_info=GetTypeInfoByFamily((const char *) NULL,draw_info->style,
+          draw_info->stretch,draw_info->weight,sans_exception);
       if (type_info == (const TypeInfo *) NULL)
         type_info=GetTypeInfo("*",sans_exception);
       sans_exception=DestroyExceptionInfo(sans_exception);
@@ -1148,6 +1155,34 @@ static MagickBooleanType RenderType(Image *image,const DrawInfo *draw_info,
 #if defined(MAGICKCORE_FREETYPE_DELEGATE)
 
 #if defined(MAGICKCORE_RAQM_DELEGATE)
+static MagickBooleanType ContainsRaqmParagraphSeparator(const unsigned char *p,
+  const size_t length)
+{
+  size_t 
+    i;
+
+  if ((p == (const unsigned char*) NULL) || (length == 0))
+    return(MagickFalse);
+
+  for (i = 0; i < length; i++)
+  {
+    /* LF or CR */
+    if ((p[i] == '\n') || (p[i] == '\r'))
+      return(MagickTrue);
+
+    /* UTF-8 NEL U+0085 => C2 85 */
+    if ((p[i] == 0xC2) && (i + 1 < length) && (p[i + 1] == 0x85))
+      return(MagickTrue);
+
+    /* UTF-8 LS/PS U+2028/U+2029 => E2 80 A8/A9 */
+    if ((p[i] == 0xE2) && (i + 2 < length) && (p[i + 1] == 0x80) &&
+        ((p[i + 2] == 0xA8) || (p[i + 2] == 0xA9)))
+      return(MagickTrue);
+  }
+
+  return(MagickFalse);
+}
+
 static size_t ComplexRaqmTextLayout(const Image *image,
   const DrawInfo *draw_info,const char *text,const size_t length,
   const FT_Face face,GraphemeInfo **grapheme,ExceptionInfo *exception)
@@ -1233,7 +1268,9 @@ static size_t ComplexRaqmTextLayout(const Image *image,
 cleanup:
   raqm_destroy(rq);
   return(extent);
-#else
+}
+#endif
+
 static size_t ComplexTextLayout(const DrawInfo *draw_info,const char *text,
   const size_t length,const FT_Face face,const FT_Int32 flags,
   GraphemeInfo **grapheme)
@@ -1255,7 +1292,7 @@ static size_t ComplexTextLayout(const DrawInfo *draw_info,const char *text,
     return(0);
   last_glyph=0;
   p=text;
-  for (i=0; GetUTFCode(p) != 0; p+=GetUTFOctets(p), i++)
+  for (i=0; GetUTFCode(p) != 0; p+=(ptrdiff_t) GetUTFOctets(p), i++)
   {
     (*grapheme)[i].index=(ssize_t) FT_Get_Char_Index(face,(FT_ULong)
       GetUTFCode(p));
@@ -1285,7 +1322,6 @@ static size_t ComplexTextLayout(const DrawInfo *draw_info,const char *text,
     last_glyph=(*grapheme)[i].index;
   }
   return((size_t) i);
-#endif
 }
 
 static void FreetypeCloseStream(FT_Stream stream)
@@ -1405,26 +1441,35 @@ static inline const char *FreetypeErrorMessage(
 #endif
 }
 
-static void *FreetypeAlloc(FT_Memory magick_unused(memory),long size)
+static void *FreetypeAlloc(FT_Memory magick_unused(memory),long extent)
 {
   magick_unreferenced(memory);
-  if (size < 0)
+  if (extent <= 0)
     return((void *) NULL);
-  if ((size_t) size > GetMaxMemoryRequest())
-    return((void *) NULL);
-  return(AcquireMagickMemory((size_t) size));
+  return(AcquireQuantumMemory((size_t) extent,1));
 }
 
-static void *FreetypeRealloc(FT_Memory magick_unused(memory),
-  long magick_unused(cur_size),long size,void *block)
+static void *FreetypeRealloc(FT_Memory magick_unused(memory),long length,
+  long extent,void *block)
 {
+  void
+    *cloned_block,
+    *new_block;
+
   magick_unreferenced(memory);
-  magick_unreferenced(cur_size);
-  if (size < 0)
+  if (extent <= 0)
+    return(RelinquishMagickMemory(block));
+  if (block == (void *) NULL)
+    return(AcquireQuantumMemory((size_t) extent,1));
+  cloned_block=AcquireQuantumMemory((size_t) length,1);
+  if (cloned_block == (void *) NULL)
     return((void *) NULL);
-  if ((size_t) size > GetMaxMemoryRequest())
+  (void) memcpy(cloned_block,block,(size_t) length);
+  new_block=ResizeQuantumMemory(cloned_block,(size_t) extent,1);
+  if (new_block == (void *) NULL)
     return((void *) NULL);
-  return(ResizeMagickMemory(block,(size_t) size));
+  block=RelinquishMagickMemory(block);
+  return(new_block);
 }
 
 static void FreetypeFree(FT_Memory magick_unused(memory),void *block)
@@ -1438,9 +1483,7 @@ static FT_Memory FreetypeAcquireMemoryManager(void)
   FT_Memory
     memory;
 
-  memory=(FT_Memory) AcquireMagickMemory(sizeof(*memory));
-  if (memory == (FT_Memory) NULL)
-    return(memory);
+  memory=(FT_Memory) AcquireCriticalMemory(sizeof(*memory));
   memset(memory,0,sizeof(*memory));
   memory->alloc=(&FreetypeAlloc);
   memory->realloc=(&FreetypeRealloc);
@@ -1465,8 +1508,10 @@ static FT_Error FreetypeInit(FT_Memory memory,FT_Library *alibrary)
   if (ft_status != 0)
     RelinquishMagickMemory(memory);
   else
-    FT_Add_Default_Modules(*alibrary);
-  FT_Set_Default_Properties(*alibrary);
+    {
+      FT_Add_Default_Modules(*alibrary);
+      FT_Set_Default_Properties(*alibrary);
+    }
   return(ft_status);
 }
 
@@ -1480,8 +1525,7 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
 
 #define ThrowFreetypeErrorException(tag,ft_status,value) \
 { \
-  const char \
-    *error_string=FreetypeErrorMessage(ft_status); \
+  const char *error_string = FreetypeErrorMessage(ft_status); \
   if (error_string != (const char *) NULL) \
     (void) ThrowMagickException(exception,GetMagickModule(),TypeError, \
       tag,"`%s (%s)'",value, error_string); \
@@ -1598,14 +1642,20 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
   /*
     Initialize Truetype library.
   */
+  if ((draw_info->font != (char *) NULL) &&
+      (IsRightsAuthorized(PathPolicyDomain,ReadPolicyRights,*draw_info->font == '@' ? draw_info->font+1 : draw_info->font) == MagickFalse))
+    ThrowPolicyException(draw_info->font,MagickFalse);
   memory=FreetypeAcquireMemoryManager();
   if (memory == (FT_Memory) NULL)
     ThrowBinaryException(ResourceLimitError,"UnableToInitializeFreetypeLibrary",
       image->filename);
   ft_status=FreetypeInit(memory,&library);
   if (ft_status != 0)
-    ThrowFreetypeErrorException("UnableToInitializeFreetypeLibrary",ft_status,
-      image->filename);
+    {
+      ThrowFreetypeErrorException("UnableToInitializeFreetypeLibrary",ft_status,
+        image->filename);
+      return(MagickFalse);
+    }
   /*
     Open font face.
   */
@@ -1767,9 +1817,9 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
   metrics->bounds.x2=metrics->ascent+metrics->descent;
   metrics->bounds.y2=metrics->ascent+metrics->descent;
   metrics->underline_position=face->underline_position*
-    (metrics->pixels_per_em.x*PerceptibleReciprocal(face->units_per_EM));
+    (metrics->pixels_per_em.x*MagickSafeReciprocal(face->units_per_EM));
   metrics->underline_thickness=face->underline_thickness*
-    (metrics->pixels_per_em.x*PerceptibleReciprocal(face->units_per_EM));
+    (metrics->pixels_per_em.x*MagickSafeReciprocal(face->units_per_EM));
   first_glyph_id=0;
   FT_Get_First_Char(face,&first_glyph_id);
   if ((draw_info->text == (char *) NULL) || (*draw_info->text == '\0') ||
@@ -1833,7 +1883,7 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
       if ((image->alpha_trait & BlendPixelTrait) == 0)
         (void) SetImageAlphaChannel(image,OpaqueAlphaChannel,exception);
     }
-  for (p=draw_info->text; GetUTFCode(p) != 0; p+=GetUTFOctets(p))
+  for (p=draw_info->text; GetUTFCode(p) != 0; p+=(ptrdiff_t) GetUTFOctets(p))
     if (GetUTFCode(p) < 0)
       break;
   utf8=(unsigned char *) NULL;
@@ -1846,12 +1896,14 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
         p=(char *) utf8;
     }
   grapheme=(GraphemeInfo *) NULL;
+  length=strlen(p);
 #if defined(MAGICKCORE_RAQM_DELEGATE)
-  length=ComplexRaqmTextLayout(image,draw_info,p,strlen(p),face,&grapheme,
-    exception);
-#else
-  length=ComplexTextLayout(draw_info,p,strlen(p),face,flags,&grapheme);
+  if (ContainsRaqmParagraphSeparator((const unsigned char *) p,length) == MagickFalse)
+    length=ComplexRaqmTextLayout(image,draw_info,p,length,face,&grapheme,
+      exception);
+  else
 #endif
+  length=ComplexTextLayout(draw_info,p,length,face,flags,&grapheme);
   missing_glyph_id=FT_Get_Char_Index(face,' ');
   code=0;
   last_character=(ssize_t) length-1;
@@ -1971,8 +2023,8 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
 
           if (status == MagickFalse)
             continue;
-          x_offset=CastDoubleToLong(ceil(point.x-0.5));
-          y_offset=CastDoubleToLong(ceil(point.y+y-0.5));
+          x_offset=CastDoubleToSsizeT(ceil(point.x-0.5));
+          y_offset=CastDoubleToSsizeT(ceil(point.y+y-0.5));
           if ((y_offset < 0) || (y_offset >= (ssize_t) image->rows))
             continue;
           q=(Quantum *) NULL;
@@ -1987,11 +2039,11 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
           n=y*bitmap->bitmap.pitch;
           for (x=0; x < (ssize_t) bitmap->bitmap.width; x++, n++)
           {
-            x_offset=CastDoubleToLong(ceil(point.x+x-0.5));
+            x_offset=CastDoubleToSsizeT(ceil(point.x+x-0.5));
             if ((x_offset < 0) || (x_offset >= (ssize_t) image->columns))
               {
                 if (q != (Quantum *) NULL)
-                  q+=GetPixelChannels(image);
+                  q+=(ptrdiff_t) GetPixelChannels(image);
                 continue;
               }
             fill_opacity=1.0;
@@ -2029,7 +2081,7 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
                 Sa=fill_opacity;
                 fill_opacity=(1.0-RoundToUnity(Sa+Da-Sa*Da))*(double)
                   QuantumRange;
-                SetPixelAlpha(image,fill_opacity,q);
+                SetPixelAlpha(image,(const Quantum) fill_opacity,q);
               }
             if (active == MagickFalse)
               {
@@ -2037,7 +2089,7 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
                 if (sync == MagickFalse)
                   status=MagickFalse;
               }
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
           sync=SyncCacheViewAuthenticPixels(image_view,exception);
           if (sync == MagickFalse)
@@ -2062,7 +2114,7 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
       }
     if ((fabs(draw_info->interword_spacing) >= MagickEpsilon) &&
         (IsUTFSpace(GetUTFCode(p+grapheme[i].cluster)) != MagickFalse) &&
-        (IsUTFSpace(code) == MagickFalse))
+        (IsUTFSpace((int) code) == MagickFalse))
       origin.x+=(FT_Pos) (64.0*draw_info->interword_spacing);
     else
       if (i == last_character)
@@ -2109,6 +2161,7 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
   const char *magick_unused(encoding),const PointInfo *offset,
   TypeMetric *metrics,ExceptionInfo *exception)
 {
+  magick_unreferenced(encoding);
   (void) ThrowMagickException(exception,GetMagickModule(),
     MissingDelegateWarning,"DelegateLibrarySupportNotBuiltIn","'%s' (Freetype)",
     draw_info->font != (char *) NULL ? draw_info->font : "none");
@@ -2149,48 +2202,20 @@ static MagickBooleanType RenderFreetype(Image *image,const DrawInfo *draw_info,
 %
 */
 
-static char *EscapeParenthesis(const char *source)
+static MagickBooleanType IsValidPostscriptFontname(const char *font)
 {
-  char
-    *destination;
-
-  char
-    *q;
-
-  const char
+  const unsigned char
     *p;
 
-  size_t
-    length;
-
-  assert(source != (const char *) NULL);
-  length=0;
-  for (p=source; *p != '\0'; p++)
+  if ((font == (const char *) NULL) || (*font == '\0'))
+    return(MagickFalse);
+  for (p=(const unsigned char *) font; *p != '\0'; p++)
   {
-    if ((*p == '\\') || (*p == '(') || (*p == ')'))
-      {
-        if (~length < 1)
-          ThrowFatalException(ResourceLimitFatalError,"UnableToEscapeString");
-        length++;
-      }
-    length++;
+    if ((isalnum(*p) != 0) || (*p == '-') || (*p == '_') || (*p == '.'))
+      continue;
+    return(MagickFalse);
   }
-  destination=(char *) NULL;
-  if (~length >= (MagickPathExtent-1))
-    destination=(char *) AcquireQuantumMemory(length+MagickPathExtent,
-      sizeof(*destination));
-  if (destination == (char *) NULL)
-    ThrowFatalException(ResourceLimitFatalError,"UnableToEscapeString");
-  *destination='\0';
-  q=destination;
-  for (p=source; *p != '\0'; p++)
-  {
-    if ((*p == '\\') || (*p == '(') || (*p == ')'))
-      *q++='\\';
-    *q++=(*p);
-  }
-  *q='\0';
-  return(destination);
+  return(MagickTrue);
 }
 
 static MagickBooleanType RenderPostscript(Image *image,
@@ -2281,8 +2306,7 @@ static MagickBooleanType RenderPostscript(Image *image,
     extent.x/2.0,extent.y/2.0);
   (void) FormatLocaleFile(file,"%g %g scale\n",draw_info->pointsize,
     draw_info->pointsize);
-  if ((draw_info->font == (char *) NULL) || (*draw_info->font == '\0') ||
-      (strchr(draw_info->font,'/') != (char *) NULL))
+  if (IsValidPostscriptFontname(draw_info->font) == MagickFalse)
     (void) FormatLocaleFile(file,
       "/Times-Roman-ISO dup /Times-Roman ReencodeType findfont setfont\n");
   else
@@ -2292,7 +2316,7 @@ static MagickBooleanType RenderPostscript(Image *image,
   (void) FormatLocaleFile(file,"[%g %g %g %g 0 0] concat\n",
     draw_info->affine.sx,-draw_info->affine.rx,-draw_info->affine.ry,
     draw_info->affine.sy);
-  text=EscapeParenthesis(draw_info->text);
+  text=EscapeParenthesis(draw_info->text,MAGICK_SIZE_MAX,exception);
   if (identity == MagickFalse)
     (void) FormatLocaleFile(file,"(%s) stringwidth pop -0.5 mul -0.5 rmoveto\n",
       text);
@@ -2300,7 +2324,7 @@ static MagickBooleanType RenderPostscript(Image *image,
   text=DestroyString(text);
   (void) FormatLocaleFile(file,"showpage\n");
   (void) fclose(file);
-  (void) FormatLocaleString(geometry,MagickPathExtent,"%.20gx%.20g+0+0!",
+  (void) FormatLocaleString(geometry,MagickPathExtent,"%.17gx%.17g+0+0!",
     floor(extent.x+0.5),floor(extent.y+0.5));
   annotate_info=AcquireImageInfo();
   (void) FormatLocaleString(annotate_info->filename,MagickPathExtent,"ps:%s",
@@ -2343,10 +2367,10 @@ static MagickBooleanType RenderPostscript(Image *image,
       crop_info=GetImageBoundingBox(annotate_image,exception);
       crop_info.height=(size_t) ((resolution.y/DefaultResolution)*
         ExpandAffine(&draw_info->affine)*draw_info->pointsize+0.5);
-      crop_info.y=CastDoubleToLong(ceil((resolution.y/DefaultResolution)*
+      crop_info.y=CastDoubleToSsizeT(ceil((resolution.y/DefaultResolution)*
         extent.y/8.0-0.5));
       (void) FormatLocaleString(geometry,MagickPathExtent,
-        "%.20gx%.20g%+.20g%+.20g",(double) crop_info.width,(double)
+        "%.17gx%.17g%+.20g%+.20g",(double) crop_info.width,(double)
         crop_info.height,(double) crop_info.x,(double) crop_info.y);
       (void) TransformImage(&annotate_image,geometry,(char *) NULL,exception);
     }
@@ -2418,10 +2442,10 @@ static MagickBooleanType RenderPostscript(Image *image,
           GetFillColor(draw_info,x,y,&fill_color,exception);
           SetPixelAlpha(annotate_image,ClampToQuantum((((double) QuantumScale*
             GetPixelIntensity(annotate_image,q)*fill_color.alpha))),q);
-          SetPixelRed(annotate_image,fill_color.red,q);
-          SetPixelGreen(annotate_image,fill_color.green,q);
-          SetPixelBlue(annotate_image,fill_color.blue,q);
-          q+=GetPixelChannels(annotate_image);
+          SetPixelRed(annotate_image,(const Quantum) fill_color.red,q);
+          SetPixelGreen(annotate_image,(const Quantum) fill_color.green,q);
+          SetPixelBlue(annotate_image,(const Quantum) fill_color.blue,q);
+          q+=(ptrdiff_t) GetPixelChannels(annotate_image);
         }
         sync=SyncCacheViewAuthenticPixels(annotate_view,exception);
         if (sync == MagickFalse)

@@ -14,16 +14,12 @@
 #define MAGICK_PLUSPLUS_IMPLEMENTATION 1
 
 #include "Magick++/Include.h"
-#include <string>
-#include <string.h>
-#include <stdlib.h>
-#include <math.h>
-
 #include "Magick++/Options.h"
 #include "Magick++/Functions.h"
 #include "Magick++/Exception.h"
+#include <cstring>
 
-#define MagickPI  3.14159265358979323846264338327950288419716939937510
+#define MagickPI     3.1415926535897932384626433832795028841971693993751058209749445923078164062
 #define DegreesToRadians(x)  (MagickPI*(x)/180.0)
 
 Magick::Options::Options(void)
@@ -310,7 +306,7 @@ void Magick::Options::fontFamily(const std::string &family_)
 {
   if (family_.length() == 0)
     {
-      _drawInfo->family=(char *) RelinquishMagickMemory(_drawInfo->font);
+      _drawInfo->family=(char *) RelinquishMagickMemory(_drawInfo->family);
       DestroyString(RemoveImageOption(imageInfo(),"family"));
     }
   else
@@ -472,14 +468,18 @@ Magick::ColorspaceType Magick::Options::quantizeColorSpace(void) const
 
 void Magick::Options::quantizeDither(const bool ditherFlag_)
 {
-  _imageInfo->dither=(MagickBooleanType) ditherFlag_;
-  _quantizeInfo->dither_method=ditherFlag_ ? RiemersmaDitherMethod :
-    NoDitherMethod;
+  quantizeDither(ditherFlag_ ? RiemersmaDitherMethod : NoDitherMethod);
 }
 
 bool Magick::Options::quantizeDither(void) const
 {
   return(static_cast<bool>(_imageInfo->dither));
+}
+
+void Magick::Options::quantizeDither(const DitherMethod ditherMethod_)
+{
+  _imageInfo->dither=(MagickBooleanType) (ditherMethod_ != NoDitherMethod);
+  _quantizeInfo->dither_method=ditherMethod_;
 }
 
 void Magick::Options::quantizeDitherMethod(const DitherMethod ditherMethod_)
@@ -588,9 +588,8 @@ void Magick::Options::strokeDashArray(const double *strokeDashArray_)
     {
       size_t
         x;
-      // Count elements in dash array
-      for (x=0; strokeDashArray_[x]; x++) ;
-      // Allocate elements
+
+      for (x=0; fabs(strokeDashArray_[x]) >= MagickEpsilon; x++) ;
       _drawInfo->dash_pattern=static_cast<double*>(AcquireMagickMemory((x+1)*
         sizeof(double)));
       if (!_drawInfo->dash_pattern)
@@ -598,8 +597,8 @@ void Magick::Options::strokeDashArray(const double *strokeDashArray_)
           "Unable to allocate dash-pattern memory");
       else
         {
-          // Copy elements
-          memcpy(_drawInfo->dash_pattern,strokeDashArray_,(x+1)*sizeof(double));
+          (void) memset(_drawInfo->dash_pattern,0,(size_t) (x+1)*sizeof(double));
+          memcpy(_drawInfo->dash_pattern,strokeDashArray_,x*sizeof(double));
           _drawInfo->dash_pattern[x]=0.0;
         }
     }
@@ -987,7 +986,7 @@ void Magick::Options::setOption(const char *name,const double value_)
   char
     option[MagickPathExtent];
 
-  (void) FormatLocaleString(option,MagickPathExtent,"%.20g",value_);
+  (void) FormatLocaleString(option,MagickPathExtent,"%.17g",value_);
   (void) SetImageOption(_imageInfo,name,option);
 }
 

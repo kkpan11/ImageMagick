@@ -83,6 +83,12 @@
     </cache>
     <coder>
       <error>
+        <message name="CoderDoesNotSupportThisStreamType">
+          coder does not support this stream tyype
+        </message>
+        <message name="CoderNestedTooDeeply">
+          coder nested too deeply
+        </message>
         <message name="ColormapTypeNotSupported">
           colormap type not supported
         </message>
@@ -260,9 +266,6 @@
           </message>
           <message name="ImageFileDoesNotContainAnyImageData">
             image file does not contain any image data
-          </message>
-          <message name="ImageTypeNotSupported">
-            image type not supported
           </message>
           <message name="ImproperImageHeader">
             improper image header
@@ -506,6 +509,9 @@
         <message name="ColorspaceColorProfileMismatch">
           color profile operates on another colorspace
         </message>
+        <message name="ExplicitCoderNotAllowed">
+          explicit coder not allowed
+        </message>
         <message name="ImageDepthNotSupported">
           image depth not supported
         </message>
@@ -521,11 +527,14 @@
         <message name="ImageSizeDiffers">
           image size differs
         </message>
-        <message name="ImagesTooDissimilar">
-          images too dissimilar
-        </message>
         <message name="LeftAndRightImageSizesDiffer">
           left and right image sizes differ
+        </message>
+        <message name="ImageSizeLimitExceeded">
+          Image dimension exceeds maximum supported size
+        </message>
+        <message name="ImageTypeNotSupported">
+          image type not supported
         </message>
         <message name="NegativeOrZeroImageSize">
           negative or zero image size
@@ -549,6 +558,9 @@
       <warning>
         <message name="AssociateProfile">
           associate profile with image, a source and destination color profile required for transform
+        </message>
+        <message name="ImagesTooDissimilar">
+          images too dissimilar
         </message>
         <message name="UnableToTransformColorspace">
           unable to transform colorspace
@@ -692,7 +704,6 @@
           missing required argument
         </message>
         <message name="MissingAnImageFilename">
-        <!-- FUTURE: Depreciate using MissingOutputFilename -->
           missing an image filename
         </message>
         <message name="MissingExpression">
@@ -703,6 +714,9 @@
         </message>
         <message name="MissingOutputFilename">
           missing output filename
+        </message>
+        <message name="MustSpecifyImageManifest">
+          must specify an image manifest
         </message>
         <message name="MustSpecifyAnImageName">
           must specify an image name
@@ -1028,7 +1042,7 @@
     <policy>
       <error>
         <message name="NotAuthorized">
-          attempt to perform an operation not allowed by the security policy
+          attempt to perform an operation not authorized by the security policy
         </message>
       </error>
     </policy>
@@ -1053,6 +1067,9 @@
           </message>
           <message name="PixelCacheAllocationFailed">
             pixel cache allocation failed
+          </message>
+          <message name="ProfileSizeExceedsLimit">
+            profile size exceeds limit
           </message>
           <message name="TimeLimitExceeded">
             time limit exceeded
@@ -1144,9 +1161,6 @@
         <warning>
           <message name="MemoryAllocationFailed">
             memory allocation failed
-          </message>
-          <message name="ProfileSizeExceedsLimit">
-            profile size exceeds limit
           </message>
         </warning>
       </limit>

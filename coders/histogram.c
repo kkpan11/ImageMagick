@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -56,6 +56,7 @@
 #include "MagickCore/memory_.h"
 #include "MagickCore/monitor.h"
 #include "MagickCore/monitor-private.h"
+#include "MagickCore/nt-base-private.h"
 #include "MagickCore/option.h"
 #include "MagickCore/pixel-accessor.h"
 #include "MagickCore/property.h"
@@ -106,6 +107,7 @@ ModuleExport size_t RegisterHISTOGRAMImage(void)
   entry->encoder=(EncodeImageHandler *) WriteHISTOGRAMImage;
   entry->flags^=CoderAdjoinFlag;
   entry->format_type=ImplicitFormatType;
+  entry->flags^=CoderBlobSupportFlag;
   (void) RegisterMagickInfo(entry);
   return(MagickImageCoderSignature);
 }
@@ -266,7 +268,7 @@ static MagickBooleanType WriteHISTOGRAMImage(const ImageInfo *image_info,
         histogram[ScaleQuantumToChar(GetPixelGreen(image,p))].green++;
       if ((GetPixelBlueTraits(image) & UpdatePixelTrait) != 0)
         histogram[ScaleQuantumToChar(GetPixelBlue(image,p))].blue++;
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
   }
   maximum=histogram[0].red;
@@ -298,35 +300,35 @@ static MagickBooleanType WriteHISTOGRAMImage(const ImageInfo *image_info,
       break;
     if ((GetPixelRedTraits(image) & UpdatePixelTrait) != 0)
       {
-        y=CastDoubleToLong(ceil((double) histogram_image->rows-scale*
+        y=CastDoubleToSsizeT(ceil((double) histogram_image->rows-scale*
           histogram[x].red-0.5));
         r=q+y*(ssize_t) GetPixelChannels(histogram_image);
         for ( ; y < (ssize_t) histogram_image->rows; y++)
         {
           SetPixelRed(histogram_image,QuantumRange,r);
-          r+=GetPixelChannels(histogram_image);
+          r+=(ptrdiff_t) GetPixelChannels(histogram_image);
         }
       }
     if ((GetPixelGreenTraits(image) & UpdatePixelTrait) != 0)
       {
-        y=CastDoubleToLong(ceil((double) histogram_image->rows-scale*
+        y=CastDoubleToSsizeT(ceil((double) histogram_image->rows-scale*
           histogram[x].green-0.5));
         r=q+y*(ssize_t) GetPixelChannels(histogram_image);
         for ( ; y < (ssize_t) histogram_image->rows; y++)
         {
           SetPixelGreen(histogram_image,QuantumRange,r);
-          r+=GetPixelChannels(histogram_image);
+          r+=(ptrdiff_t) GetPixelChannels(histogram_image);
         }
       }
     if ((GetPixelBlueTraits(image) & UpdatePixelTrait) != 0)
       {
-        y=CastDoubleToLong(ceil((double) histogram_image->rows-scale*
+        y=CastDoubleToSsizeT(ceil((double) histogram_image->rows-scale*
           histogram[x].blue-0.5));
         r=q+y*(ssize_t) GetPixelChannels(histogram_image);
         for ( ; y < (ssize_t) histogram_image->rows; y++)
         {
           SetPixelBlue(histogram_image,QuantumRange,r);
-          r+=GetPixelChannels(histogram_image);
+          r+=(ptrdiff_t) GetPixelChannels(histogram_image);
         }
       }
     if (SyncAuthenticPixels(histogram_image,exception) == MagickFalse)

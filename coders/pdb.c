@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -271,10 +271,6 @@ static MagickBooleanType IsPDB(const unsigned char *magick,const size_t length)
 */
 static Image *ReadPDBImage(const ImageInfo *image_info,ExceptionInfo *exception)
 {
-  unsigned char
-    attributes,
-    tag[3];
-
   Image
     *image;
 
@@ -288,16 +284,8 @@ static Image *ReadPDBImage(const ImageInfo *image_info,ExceptionInfo *exception)
     pdb_info;
 
   Quantum
-    index;
-
-  ssize_t
-    x;
-
-  Quantum
+    index,
     *q;
-
-  unsigned char
-    *p;
 
   size_t
     bits_per_pixel,
@@ -309,10 +297,14 @@ static Image *ReadPDBImage(const ImageInfo *image_info,ExceptionInfo *exception)
     count,
     img_offset,
     comment_offset = 0,
+    x,
     y;
 
   unsigned char
-    *pixels;
+    attributes,
+    *p,
+    *pixels,
+    tag[3];
 
   /*
     Open image file.
@@ -389,7 +381,7 @@ static Image *ReadPDBImage(const ImageInfo *image_info,ExceptionInfo *exception)
   count=ReadBlob(image,sizeof(pdb_image.name),(unsigned char *) pdb_image.name);
   if (count != sizeof(pdb_image.name))
     ThrowReaderException(CorruptImageError,"ImproperImageHeader");
-  pdb_image.version=ReadBlobByte(image);
+  pdb_image.version=(char) ReadBlobByte(image);
   pdb_image.type=(unsigned char) (ReadBlobByte(image));
   pdb_image.reserved_1=ReadBlobMSBLong(image);
   pdb_image.note=ReadBlobMSBLong(image);
@@ -403,8 +395,8 @@ static Image *ReadPDBImage(const ImageInfo *image_info,ExceptionInfo *exception)
   /*
     Initialize image structure.
   */
-  image->columns=(size_t) pdb_image.width;
-  image->rows=(size_t) pdb_image.height;
+  image->columns=(size_t) MagickAbsoluteValue(pdb_image.width);
+  image->rows=(size_t) MagickAbsoluteValue(pdb_image.height);
   image->depth=8;
   image->storage_class=PseudoClass;
   bits_per_pixel=pdb_image.type == 0 ? 2UL : pdb_image.type == 2 ? 4UL : 1UL;
@@ -416,12 +408,15 @@ static Image *ReadPDBImage(const ImageInfo *image_info,ExceptionInfo *exception)
       (void) CloseBlob(image);
       return(GetFirstImageInList(image));
     }
+  packets=(bits_per_pixel*image->columns+7)/8;
+  if (((packets+257UL) > GetBlobSize(image)) ||
+      (image->rows > GetBlobSize(image)))
+    ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
   status=SetImageExtent(image,image->columns,image->rows,exception);
   if (status != MagickFalse)
     status=ResetImagePixels(image,exception);
   if (status == MagickFalse)
     return(DestroyImageList(image));
-  packets=(bits_per_pixel*image->columns+7)/8;
   pixels=(unsigned char *) AcquireQuantumMemory(packets+257UL,image->rows*
     sizeof(*pixels));
   if (pixels == (unsigned char *) NULL)
@@ -478,7 +473,7 @@ static Image *ReadPDBImage(const ImageInfo *image_info,ExceptionInfo *exception)
         {
           index=(Quantum) (*p & (0x80 >> bit) ? 0x00 : 0x01);
           SetPixelIndex(image,index,q);
-          q+=GetPixelChannels(image);
+          q+=(ptrdiff_t) GetPixelChannels(image);
           bit++;
           if (bit == 8)
             {
@@ -513,10 +508,10 @@ static Image *ReadPDBImage(const ImageInfo *image_info,ExceptionInfo *exception)
         for (x=0; x < (ssize_t) image->columns; x++)
         {
           shift-=2;
-          index=ConstrainColormapIndex(image,3UL-((*p >> shift) & 0x03),
+          index=(Quantum) ConstrainColormapIndex(image,3UL-((*p >> shift) & 0x03),
             exception);
           SetPixelIndex(image,index,q);
-          q+=GetPixelChannels(image);
+          q+=(ptrdiff_t) GetPixelChannels(image);
           if (shift == 0)
             {
               shift=8;
@@ -550,10 +545,10 @@ static Image *ReadPDBImage(const ImageInfo *image_info,ExceptionInfo *exception)
         for (x=0; x < (ssize_t) image->columns; x++)
         {
           shift-=4;
-          index=ConstrainColormapIndex(image,15UL-((*p >> shift) & 0x0f),
+          index=(Quantum) ConstrainColormapIndex(image,15UL-((*p >> shift) & 0x0f),
             exception);
           SetPixelIndex(image,index,q);
-          q+=GetPixelChannels(image);
+          q+=(ptrdiff_t) GetPixelChannels(image);
           if (shift == 0)
             {
               shift=8;
@@ -621,12 +616,12 @@ static Image *ReadPDBImage(const ImageInfo *image_info,ExceptionInfo *exception)
               break;
             r=comment+strlen(comment);
           }
-        *r=c;
+        *r=(char) c;
         c=ReadBlobByte(image);
       }
-      *r='\0';
       if (comment == (char *) NULL)
         ThrowReaderException(ResourceLimitError,"MemoryAllocationFailed");
+      *r='\0';
       (void) SetImageProperty(image,"comment",comment,exception);
       comment=DestroyString(comment);
     }
@@ -819,7 +814,7 @@ static MagickBooleanType WritePDBImage(const ImageInfo *image_info,Image *image,
   (void) CopyMagickString(pdb_info.name,filename,sizeof(pdb_info.name));
   pdb_info.attributes=0;
   pdb_info.version=0;
-  pdb_info.create_time=GetMagickTime();
+  pdb_info.create_time=(ssize_t) GetMagickTime();
   pdb_info.modify_time=pdb_info.create_time;
   pdb_info.archive_time=0;
   pdb_info.modify_number=0;

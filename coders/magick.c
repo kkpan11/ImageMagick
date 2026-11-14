@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -13214,7 +13214,9 @@ static MagickBooleanType WriteMAGICKImage(const ImageInfo *image_info,
   Image *image,ExceptionInfo *exception)
 {
   char
-    buffer[MagickPathExtent];
+    buffer[MagickPathExtent],
+    *p,
+    *sanitized_filename;
 
   const char
     *value;
@@ -13230,9 +13232,6 @@ static MagickBooleanType WriteMAGICKImage(const ImageInfo *image_info,
 
   size_t
     length;
-
-  char
-    *p;
 
   ssize_t
     i;
@@ -13289,8 +13288,10 @@ static MagickBooleanType WriteMAGICKImage(const ImageInfo *image_info,
       return(status);
     }
   (void) WriteBlobString(image,"/*\n");
+  sanitized_filename=SanitizeStringForIdentifier(image->filename);
   (void) FormatLocaleString(buffer,MagickPathExtent,"  %s (%s).\n",
-    image->filename,write_info->magick);
+    sanitized_filename,write_info->magick);
+  sanitized_filename=DestroyString(sanitized_filename);
   (void) DestroyImageInfo(write_info);
   (void) WriteBlobString(image,buffer);
   (void) WriteBlobString(image,"*/\n");

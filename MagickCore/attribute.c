@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -229,7 +229,7 @@ static double GetEdgeBackgroundCensus(const Image *image,
       GetPixelInfoPixel(edge_image,p,&pixel);
       if (IsFuzzyEquivalencePixelInfo(&pixel,&background) == MagickFalse)
         census++;
-      p+=GetPixelChannels(edge_image);
+      p+=(ptrdiff_t) GetPixelChannels(edge_image);
     }
   }
   census/=((double) edge_image->columns*edge_image->rows);
@@ -533,7 +533,7 @@ MagickExport RectangleInfo GetImageBoundingBox(const Image *image,
           bounding_box.width=(size_t) x;
           bounding_box.height=(size_t) y;
         }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
 #if defined(MAGICKCORE_OPENMP_SUPPORT)
 #  pragma omp critical (MagickCore_GetImageBoundingBox)
@@ -550,7 +550,9 @@ MagickExport RectangleInfo GetImageBoundingBox(const Image *image,
     }
   }
   image_view=DestroyCacheView(image_view);
-  if ((bounds.width == 0) || (bounds.height == 0))
+  if ((bounds.width == 0) || (bounds.height == 0) ||
+      (bounds.x > (ssize_t) bounds.width) ||
+      (bounds.y > (ssize_t) bounds.height))
     (void) ThrowMagickException(exception,GetMagickModule(),OptionWarning,
       "GeometryDoesNotContainImage","`%s'",image->filename);
   else
@@ -711,7 +713,7 @@ static PixelInfo GetEdgeBackgroundColor(const Image *image,
         GetPixelInfoPixel(edge_image,p,&pixel);
         if (IsFuzzyEquivalencePixelInfo(&pixel,background+i) == MagickFalse)
           census[i]++;
-        p+=GetPixelChannels(edge_image);
+        p+=(ptrdiff_t) GetPixelChannels(edge_image);
       }
     }
     edge_view=DestroyCacheView(edge_view);
@@ -798,10 +800,23 @@ MagickExport PointInfo *GetImageConvexHull(const Image *image,
   if (IsEventLogging() != MagickFalse)
     (void) LogMagickEvent(TraceEvent,GetMagickModule(),"%s",image->filename);
   *number_vertices=0;
+  if (HeapOverflowSanityCheck(image->columns,image->rows*sizeof(*vertices)) != MagickFalse)
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),
+        ResourceLimitError,"MemoryAllocationFailed","`%s'",image->filename);
+      return((PointInfo *) NULL);
+    }
   vertices_info=AcquireVirtualMemory(image->columns,image->rows*
     sizeof(*vertices));
-  monotone_info=AcquireVirtualMemory(2*image->columns,2*
-    image->rows*sizeof(*monotone_chain));
+  if (HeapOverflowSanityCheck(2*image->columns,2*image->rows*sizeof(*monotone_chain)) != MagickFalse)
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),
+        ResourceLimitError,"MemoryAllocationFailed","`%s'",image->filename);
+      vertices_info=RelinquishVirtualMemory(vertices_info);
+      return((PointInfo *) NULL);
+    }
+  monotone_info=AcquireVirtualMemory(2*image->columns,2*image->rows*
+    sizeof(*monotone_chain));
   if ((vertices_info == (MemoryInfo *) NULL) ||
       (monotone_info == (MemoryInfo *) NULL))
     {
@@ -845,7 +860,7 @@ MagickExport PointInfo *GetImageConvexHull(const Image *image,
           vertices[n].y=(double) y;
           n++;
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
   }
   image_view=DestroyCacheView(image_view);
@@ -1028,7 +1043,7 @@ MagickExport size_t GetImageDepth(const Image *image,ExceptionInfo *exception)
             if (depth_map[ScaleQuantumToMap(p[j])] > current_depth[id])
               current_depth[id]=depth_map[ScaleQuantumToMap(p[j])];
           }
-          p+=GetPixelChannels(image);
+          p+=(ptrdiff_t) GetPixelChannels(image);
         }
         if (current_depth[id] == MAGICKCORE_QUANTUM_DEPTH)
           status=MagickFalse;
@@ -1094,7 +1109,7 @@ MagickExport size_t GetImageDepth(const Image *image,ExceptionInfo *exception)
           current_depth[id]++;
         }
       }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (current_depth[id] == MAGICKCORE_QUANTUM_DEPTH)
       status=MagickFalse;
@@ -1301,6 +1316,13 @@ MagickExport PointInfo *GetImageMinimumBoundingBox(Image *image,
         caliper_info.q=q;
         caliper_info.v=v;
       }
+    if ((caliper_info.p < 0) || (caliper_info.q < 0) || (caliper_info.v < 0))
+      {
+        vertices=(PointInfo *) RelinquishMagickMemory(vertices);
+        bounding_box=(PointInfo *) RelinquishMagickMemory(bounding_box);
+        *number_vertices=0;
+        return((PointInfo *) NULL);
+      }
   }
   /*
     Initialize minimum bounding box.
@@ -1394,17 +1416,17 @@ MagickExport PointInfo *GetImageMinimumBoundingBox(Image *image,
 
         delta.x=bounding_box[(i+1) % 4].x-bounding_box[i].x;
         delta.y=bounding_box[(i+1) % 4].y-bounding_box[i].y;
-        slope=delta.y*PerceptibleReciprocal(delta.x);
+        slope=delta.y*MagickSafeReciprocal(delta.x);
         intercept=bounding_box[(i+1) % 4].y-slope*bounding_box[i].x;
         d=fabs((slope*bounding_box[i].x-bounding_box[i].y+intercept)*
-          PerceptibleReciprocal(sqrt(slope*slope+1.0)));
+          MagickSafeReciprocal(sqrt(slope*slope+1.0)));
         if ((i == 0) || (d < distance))
           {
             distance=d;
             point=delta;
           }
       }
-      angle=RadiansToDegrees(atan(point.y*PerceptibleReciprocal(point.x)));
+      angle=RadiansToDegrees(atan(point.y*MagickSafeReciprocal(point.x)));
       length=hypot(point.x,point.y);
       p_length=fabs((double) MagickMax(caliper_info.width,caliper_info.height)-
         length);
@@ -1614,7 +1636,7 @@ MagickExport ImageType IdentifyImageGray(const Image *image,
         }
       if ((type == BilevelType) && (IsPixelMonochrome(image,p) == MagickFalse))
         type=GrayscaleType;
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
   }
   image_view=DestroyCacheView(image_view);
@@ -1700,7 +1722,7 @@ MagickExport MagickBooleanType IdentifyImageMonochrome(const Image *image,
           type=UndefinedType;
           break;
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
   }
   image_view=DestroyCacheView(image_view);
@@ -1909,7 +1931,7 @@ MagickExport MagickBooleanType IsImageOpaque(const Image *image,
           opaque=MagickFalse;
           break;
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
   }
   image_view=DestroyCacheView(image_view);
@@ -1945,11 +1967,140 @@ MagickExport MagickBooleanType IsImageOpaque(const Image *image,
 %    o exception: return any errors or warnings in this structure.
 %
 */
+
+static MagickBooleanType FloydSteinbergImageDepth(Image *image,
+  const size_t depth,ExceptionInfo *exception)
+{
+  CacheView
+    *image_view;
+
+  double
+    *distortion;
+
+  MagickBooleanType
+    status;
+
+  QuantumAny
+    range;
+
+  size_t
+    channels;
+
+  ssize_t
+    y;
+
+  /*
+    Dither pixels with Floyd Steinberg algorithm.
+  */
+  status=SetImageStorageClass(image,DirectClass,exception);
+  if (status == MagickFalse)
+    return(MagickFalse);
+  channels=GetPixelChannels(image);
+  distortion=(double *) AcquireQuantumMemory(image->columns,3*channels*
+    sizeof(*distortion));
+  if (distortion == (double *) NULL)
+    return(MagickFalse);
+  (void) memset(distortion,0,3*image->columns*channels*sizeof(*distortion));
+  range=GetQuantumRange(depth);
+  image_view=AcquireAuthenticCacheView(image,exception);
+  for (y=0; y < (ssize_t) image->rows; y++)
+  {
+    Quantum
+      *magick_restrict q;
+
+    ssize_t
+      u,
+      v,
+      x;
+
+    if (status == MagickFalse)
+      continue;
+    q=GetCacheViewAuthenticPixels(image_view,0,y,image->columns,1,exception);
+    if (q == (Quantum *) NULL)
+      {
+        status=MagickFalse;
+        continue;
+      }
+    /*
+      Reset pixel distortion for current row.
+    */
+    u=(y % 3)*(ssize_t) (image->columns*channels);
+    (void) memset(distortion+u,0,image->columns*channels*sizeof(*distortion));
+    v=((y+1) % 3)*(ssize_t) (image->columns*channels);
+    for (x=0; x < (ssize_t) image->columns; x++)
+    {
+      ssize_t
+        i;
+
+      for (i=0; i < (ssize_t) channels; i++)
+      {
+        double
+          error,
+          pixel;
+
+        PixelChannel
+          channel;
+
+        PixelTrait
+          traits;
+
+        /*
+          Add distortion to current pixel then distribute new distortion.
+        */
+        channel=GetPixelChannelChannel(image,i);
+        traits=GetPixelChannelTraits(image,channel);
+        if ((traits & UpdatePixelTrait) == 0)
+          {
+            u++;
+            v++;
+            continue;
+          }
+        pixel=(double) q[i]+distortion[u];
+        q[i]=ScaleAnyToQuantum(ScaleQuantumToAny(ClampPixel((MagickRealType)
+          pixel),range),range);
+        /*
+          Distribute distortion for right.
+        */
+        error=pixel-(double) q[i];
+        if ((x+1) < (ssize_t) image->columns)
+          distortion[u+(ssize_t) channels]+=7.0*error/16.0;
+        if ((y+1) < (ssize_t) image->rows)
+          {
+            /*
+              Distribute distortion for bottom left, bottom, and bottom right.
+            */
+            if (x > 0)
+              distortion[v-(ssize_t) channels]+=3.0*error/16.0;
+            distortion[v]+=5.0*error/16.0;
+            if ((x+1) < (ssize_t) image->columns)
+              distortion[v+(ssize_t) channels]+=1.0*error/16.0;
+          }
+        u++;
+        v++;
+      }
+      q+=(ptrdiff_t) GetPixelChannels(image);
+    }
+    if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
+      {
+        status=MagickFalse;
+        continue;
+      }
+  }
+  image_view=DestroyCacheView(image_view);
+  distortion=(double *) RelinquishMagickMemory(distortion);
+  if (status != MagickFalse)
+    image->depth=depth;
+  return(status);
+}
+
 MagickExport MagickBooleanType SetImageDepth(Image *image,
   const size_t depth,ExceptionInfo *exception)
 {
   CacheView
     *image_view;
+
+  const char
+    *artifact;
 
   MagickBooleanType
     status;
@@ -1969,6 +2120,10 @@ MagickExport MagickBooleanType SetImageDepth(Image *image,
       image->depth=depth;
       return(MagickTrue);
     }
+  artifact=GetImageArtifact(image,"dither");
+  if ((artifact != (const char *) NULL) &&
+      (LocaleCompare(artifact,"FloydSteinberg") == 0))
+    return(FloydSteinbergImageDepth(image,depth,exception));
   range=GetQuantumRange(depth);
   if (image->storage_class == PseudoClass)
     {
@@ -2057,7 +2212,7 @@ MagickExport MagickBooleanType SetImageDepth(Image *image,
               continue;
             q[j]=depth_map[ScaleQuantumToMap(q[j])];
           }
-          q+=GetPixelChannels(image);
+          q+=(ptrdiff_t) GetPixelChannels(image);
         }
         if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
           {
@@ -2115,7 +2270,7 @@ MagickExport MagickBooleanType SetImageDepth(Image *image,
         q[i]=ScaleAnyToQuantum(ScaleQuantumToAny(ClampPixel((MagickRealType)
           q[i]),range),range);
       }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       {
@@ -2255,7 +2410,6 @@ MagickExport MagickBooleanType SetImageType(Image *image,const ImageType type,
       if ((image->alpha_trait & BlendPixelTrait) == 0)
         (void) SetImageAlphaChannel(image,OpaqueAlphaChannel,exception);
       quantize_info=AcquireQuantizeInfo(image_info);
-      quantize_info->colorspace=TransparentColorspace;
       status=QuantizeImage(quantize_info,image,exception);
       quantize_info=DestroyQuantizeInfo(quantize_info);
       break;

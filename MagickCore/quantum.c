@@ -22,7 +22,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -323,8 +323,10 @@ MagickExport size_t GetQuantumExtent(const Image *image,
     case RGBAQuantum: channels=4; break;
     case RGBOQuantum: channels=4; break;
     case BGRAQuantum: channels=4; break;
+    case BGROQuantum: channels=4; break;
     case CMYKQuantum: channels=4; break;
     case CMYKAQuantum: channels=5; break;
+    case CMYKOQuantum: channels=5; break;
     case MultispectralQuantum: channels=GetImageChannels(image); break;
     case CbYCrAQuantum: channels=4; break;
     case CbYCrQuantum: channels=3; break;
@@ -669,10 +671,6 @@ MagickExport void SetQuantumAlphaType(QuantumInfo *quantum_info,
 MagickExport MagickBooleanType SetQuantumDepth(const Image *image,
   QuantumInfo *quantum_info,const size_t depth)
 {
-  size_t
-    extent,
-    quantum;
-
   /*
     Allocate the quantum pixel buffer.
   */
@@ -696,22 +694,7 @@ MagickExport MagickBooleanType SetQuantumDepth(const Image *image,
           else
             quantum_info->depth=16;
     }
-  /*
-    Speculative allocation since we don't yet know the quantum type.
-  */
-  quantum=(GetPixelChannels(image)+quantum_info->pad+3)*
-    ((quantum_info->depth+7)/8)*sizeof(double);
-  extent=MagickMax(image->columns,image->rows)*quantum;
-  if ((MagickMax(image->columns,image->rows) != 0) &&
-      (quantum != (extent/MagickMax(image->columns,image->rows))))
-    return(MagickFalse);
-  if (quantum_info->pixels != (MemoryInfo **) NULL)
-    {
-      if (extent <= quantum_info->extent)
-        return(MagickTrue);
-      DestroyQuantumPixels(quantum_info);
-    }
-  return(AcquireQuantumPixels(quantum_info,extent));
+  return(SetQuantumExtent(image,quantum_info));
 }
 
 /*
@@ -751,7 +734,61 @@ MagickExport MagickBooleanType SetQuantumEndian(const Image *image,
   if (IsEventLogging() != MagickFalse)
     (void) LogMagickEvent(TraceEvent,GetMagickModule(),"%s",image->filename);
   quantum_info->endian=endian;
-  return(SetQuantumDepth(image,quantum_info,quantum_info->depth));
+  return(SetQuantumExtent(image,quantum_info));
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   S e t Q u a n t u m E x t e n t                                           %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  SetQuantumExtent() sets the quantum pixel buffer extent.
+%
+%  The format of the SetQuantumExtent method is:
+%
+%      MagickBooleanType SetQuantumExtent(Image *image,
+%        QuantumInfo *quantum_info)
+%
+%  A description of each parameter follows:
+%
+%    o image: the image.
+%
+%    o quantum_info: the quantum info.
+%
+*/
+MagickExport MagickBooleanType SetQuantumExtent(const Image *image,
+  QuantumInfo *quantum_info)
+{
+  size_t
+    extent,
+    quantum;
+
+  /*
+    Speculative allocation since we don't yet know the quantum type.
+  */
+  assert(image != (Image *) NULL);
+  assert(image->signature == MagickCoreSignature);
+  assert(quantum_info != (QuantumInfo *) NULL);
+  assert(quantum_info->signature == MagickCoreSignature);
+  quantum=(GetPixelChannels(image)+quantum_info->pad+3)*
+    ((quantum_info->depth+7)/8)*sizeof(double);
+  extent=MagickMax(image->columns,image->rows)*quantum;
+  if ((MagickMax(image->columns,image->rows) != 0) &&
+      (quantum != (extent/MagickMax(image->columns,image->rows))))
+    return(MagickFalse);
+  if (quantum_info->pixels != (MemoryInfo **) NULL)
+    {
+      if (extent <= quantum_info->extent)
+        return(MagickTrue);
+      DestroyQuantumPixels(quantum_info);
+    }
+  return(AcquireQuantumPixels(quantum_info,extent));
 }
 
 /*
@@ -791,7 +828,7 @@ MagickExport MagickBooleanType SetQuantumFormat(const Image *image,
   if (IsEventLogging() != MagickFalse)
     (void) LogMagickEvent(TraceEvent,GetMagickModule(),"%s",image->filename);
   quantum_info->format=format;
-  return(SetQuantumDepth(image,quantum_info,quantum_info->depth));
+  return(SetQuantumExtent(image,quantum_info));
 }
 
 /*
@@ -867,6 +904,47 @@ MagickExport void SetQuantumImageType(Image *image,
 %                                                                             %
 %                                                                             %
 %                                                                             %
+%   S e t Q u a n t u m M e t a C h a n n e l                                 %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  SetQuantumMetaChannel() sets the quantum meta-channel that will exported or
+%  imported when the quantum type is MultispectralQuantum. To unset the
+%  meta-channel, set the meta-channel to -1.
+%
+%  The format of the SetQuantumMetaChannel method is:
+%
+%      void SetQuantumMetaChannel(const Image *image,QuantumInfo *quantum_info,
+%        const ssize_t meta_channel)
+%
+%  A description of each parameter follows:
+%
+%    o image: the image.
+%
+%    o quantum_info: the quantum info.
+%
+%    o meta_channel: the meta channel.
+%
+*/
+MagickExport MagickBooleanType SetQuantumMetaChannel(const Image *image,
+  QuantumInfo *quantum_info, const ssize_t meta_channel) 
+{
+  assert(quantum_info != (QuantumInfo *) NULL);
+  assert(quantum_info->signature == MagickCoreSignature);
+  if ((meta_channel < -1) ||
+      (meta_channel >= (ssize_t) image->number_meta_channels))
+    return(MagickFalse);
+  quantum_info->meta_channel=meta_channel+1;
+  return(MagickTrue);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
 %   S e t Q u a n t u m P a c k                                               %
 %                                                                             %
 %                                                                             %
@@ -934,7 +1012,7 @@ MagickExport MagickBooleanType SetQuantumPad(const Image *image,
   if (pad >= (MAGICK_SSIZE_MAX/GetImageChannels(image)))
     return(MagickFalse);
   quantum_info->pad=pad;
-  return(SetQuantumDepth(image,quantum_info,quantum_info->depth));
+  return(SetQuantumExtent(image,quantum_info));
 }
 
 /*

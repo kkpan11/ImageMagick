@@ -1,11 +1,11 @@
 /*
-  Copyright @ 2000 ImageMagick Studio LLC, a non-profit organization
+  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization
   dedicated to making software imaging solutions freely available.
 
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -35,6 +35,7 @@ extern MagickExport void
 extern ModuleExport size_t
   RegisterAAIImage(void),
   RegisterARTImage(void),
+  RegisterASEImage(void),
   RegisterASHLARImage(void),
   RegisterAVSImage(void),
   RegisterBAYERImage(void),
@@ -50,12 +51,15 @@ extern ModuleExport size_t
   RegisterCMYKImage(void),
   RegisterCUBEImage(void),
   RegisterCUTImage(void),
+  RegisterC2PAImage(void),
   RegisterDCMImage(void),
   RegisterDDSImage(void),
   RegisterDEBUGImage(void),
   RegisterDIBImage(void),
   RegisterDJVUImage(void),
+  RegisterDMRImage(void),
   RegisterDNGImage(void),
+  RegisterDOTImage(void),
   RegisterDPSImage(void),
   RegisterDPXImage(void),
   RegisterEMFImage(void),
@@ -87,6 +91,7 @@ extern ModuleExport size_t
   RegisterJSONImage(void),
   RegisterJP2Image(void),
   RegisterJXLImage(void),
+  RegisterKERNELImage(void),
   RegisterLABELImage(void),
   RegisterMACImage(void),
   RegisterMAGICKImage(void),
@@ -134,6 +139,7 @@ extern ModuleExport size_t
   RegisterSCRImage(void),
   RegisterSCREENSHOTImage(void),
   RegisterSCTImage(void),
+  RegisterSF3Image(void),
   RegisterSFWImage(void),
   RegisterSGIImage(void),
   RegisterSIXELImage(void),
@@ -158,6 +164,7 @@ extern ModuleExport size_t
   RegisterVIDEOImage(void),
   RegisterVIFFImage(void),
   RegisterVIPSImage(void),
+  RegisterWBINFOImage(void),
   RegisterWBMPImage(void),
   RegisterWEBPImage(void),
   RegisterWMFImage(void),
@@ -176,6 +183,7 @@ extern ModuleExport size_t
 extern ModuleExport void
   UnregisterAAIImage(void),
   UnregisterARTImage(void),
+  UnregisterASEImage(void),
   UnregisterASHLARImage(void),
   UnregisterAVSImage(void),
   UnregisterBAYERImage(void),
@@ -191,12 +199,15 @@ extern ModuleExport void
   UnregisterCMYKImage(void),
   UnregisterCUBEImage(void),
   UnregisterCUTImage(void),
+  UnregisterC2PAImage(void),
   UnregisterDCMImage(void),
   UnregisterDDSImage(void),
   UnregisterDEBUGImage(void),
   UnregisterDIBImage(void),
   UnregisterDJVUImage(void),
+  UnregisterDMRImage(void),
   UnregisterDNGImage(void),
+  UnregisterDOTImage(void),
   UnregisterDPSImage(void),
   UnregisterDPXImage(void),
   UnregisterEMFImage(void),
@@ -228,6 +239,7 @@ extern ModuleExport void
   UnregisterJP2Image(void),
   UnregisterJSONImage(void),
   UnregisterJXLImage(void),
+  UnregisterKERNELImage(void),
   UnregisterLABELImage(void),
   UnregisterMACImage(void),
   UnregisterMAGICKImage(void),
@@ -275,6 +287,7 @@ extern ModuleExport void
   UnregisterSCRImage(void),
   UnregisterSCREENSHOTImage(void),
   UnregisterSCTImage(void),
+  UnregisterSF3Image(void),
   UnregisterSFWImage(void),
   UnregisterSGIImage(void),
   UnregisterSIXELImage(void),
@@ -299,6 +312,7 @@ extern ModuleExport void
   UnregisterVIDEOImage(void),
   UnregisterVIFFImage(void),
   UnregisterVIPSImage(void),
+  UnregisterWBINFOImage(void),
   UnregisterWBMPImage(void),
   UnregisterWEBPImage(void),
   UnregisterWMFImage(void),

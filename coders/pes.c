@@ -17,13 +17,13 @@
 %                                 July 2009                                   %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2009 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -63,6 +63,7 @@
 #include "MagickCore/monitor.h"
 #include "MagickCore/monitor-private.h"
 #include "MagickCore/montage.h"
+#include "MagickCore/nt-base-private.h"
 #include "MagickCore/resize.h"
 #include "MagickCore/shear.h"
 #include "MagickCore/quantum-private.h"
@@ -623,8 +624,8 @@ static Image *ReadPESImage(const ImageInfo *image_info,ExceptionInfo *exception)
   j++;
   blocks[j].offset=(ssize_t) i;
   number_blocks=(size_t) j;
-  image->columns=bounds.x2-bounds.x1;
-  image->rows=bounds.y2-bounds.y1;
+  image->columns=CastDoubleToSizeT(bounds.x2-bounds.x1);
+  image->rows=CastDoubleToSizeT(bounds.y2-bounds.y1);
   status=SetImageExtent(image,image->columns,image->rows,exception);
   if (status == MagickFalse)
     {

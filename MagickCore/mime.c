@@ -15,13 +15,13 @@
 %                                 July 2000                                   %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2000 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -55,6 +55,7 @@
 #include "MagickCore/token.h"
 #include "MagickCore/utility.h"
 #include "MagickCore/utility-private.h"
+#include "MagickCore/quantum-private.h"
 #include "MagickCore/xml-tree.h"
 #include "MagickCore/xml-tree-private.h"
 
@@ -243,16 +244,12 @@ MagickExport const MimeInfo *GetMimeInfo(const char *filename,
   ssize_t
     value;
 
-  unsigned long
-    lsb_first;
-
   assert(exception != (ExceptionInfo *) NULL);
   if (IsMimeCacheInstantiated(exception) == MagickFalse)
     return((const MimeInfo *) NULL);
   /*
     Search for mime tag.
   */
-  lsb_first=1;
   LockSemaphoreInfo(mime_semaphore);
   p=GetHeadElementInLinkedList(mime_cache);
   if ((magic == (const unsigned char *) NULL) || (length == 0))
@@ -310,7 +307,7 @@ MagickExport const MimeInfo *GetMimeInfo(const char *filename,
         r=magic+q->offset;
         endian=q->endian;
         if (q->endian == UndefinedEndian)
-          endian=(*(char *) &lsb_first) == 1 ? LSBEndian : MSBEndian;
+          endian=GetHostEndian();
         if (endian == LSBEndian)
           {
             value=(ssize_t) (*r++);
@@ -340,7 +337,7 @@ MagickExport const MimeInfo *GetMimeInfo(const char *filename,
         r=magic+q->offset;
         endian=q->endian;
         if (q->endian == UndefinedEndian)
-          endian=(*(char *) &lsb_first) == 1 ? LSBEndian : MSBEndian;
+          endian=GetHostEndian();
         if (endian == LSBEndian)
           {
             value=(ssize_t) (*r++);
@@ -840,7 +837,7 @@ static MagickBooleanType LoadMimeCache(LinkedListInfo *cache,const char *xml,
     attribute=GetXMLTreeAttribute(include,"file");
     if (attribute != (const char *) NULL)
       {
-        if (depth > MagickMaxRecursionDepth)
+        if (depth >= MagickMaxRecursionDepth)
           (void) ThrowMagickException(exception,GetMagickModule(),
             ConfigureError,"IncludeElementNestedTooDeeply","`%s'",filename);
         else
@@ -902,9 +899,11 @@ static MagickBooleanType LoadMimeCache(LinkedListInfo *cache,const char *xml,
           *q;
 
         token=AcquireString(attribute);
-        (void) SubstituteString((char **) &token,"&lt;","<");
-        (void) SubstituteString((char **) &token,"&amp;","&");
-        (void) SubstituteString((char **) &token,"&quot;","\"");
+        (void) SubstituteString(&token,"&lt;","<");
+        (void) SubstituteString(&token,"&gt;",">");
+        (void) SubstituteString(&token,"&amp;","&");
+        (void) SubstituteString(&token,"&quot;","\"");
+        (void) SubstituteString(&token,"&apos;","'");
         mime_info->magic=(unsigned char *) AcquireString(token);
         q=mime_info->magic;
         for (p=token; *p != '\0'; )
@@ -918,7 +917,7 @@ static MagickBooleanType LoadMimeCache(LinkedListInfo *cache,const char *xml,
                     *end;
 
                   *q++=(unsigned char) strtol(p,&end,8);
-                  p+=(end-p);
+                  p+=(ptrdiff_t) (end-p);
                   mime_info->length++;
                   continue;
                 }

@@ -18,13 +18,13 @@
 %                               Dirk Lemstra                                  %
 %                               January 2014                                  %
 %                                                                             %
-%  Copyright @ 2001 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -504,9 +504,8 @@ static Image *ReadEMFImage(const ImageInfo *image_info,ExceptionInfo *exception)
           if (image->units == PixelsPerCentimeterResolution)
             x_resolution*=CENTIMETERS_INCH;
         }
-      image->rows=(size_t) ((height/1000.0/CENTIMETERS_INCH)*y_resolution+0.5);
-      image->columns=(size_t) ((width/1000.0/CENTIMETERS_INCH)*
-        x_resolution+0.5);
+      image->rows=CastDoubleToSizeT((height/1000.0/CENTIMETERS_INCH)*y_resolution+0.5);
+      image->columns=CastDoubleToSizeT((width/1000.0/CENTIMETERS_INCH)*x_resolution+0.5);
     }
   if (image_info->size != (char *) NULL)
     {
@@ -539,10 +538,9 @@ static Image *ReadEMFImage(const ImageInfo *image_info,ExceptionInfo *exception)
           flags=ParseMetaGeometry(geometry,&sans,&sans,&image->columns,
             &image->rows);
           if (image->resolution.x != 0.0)
-            image->columns=(size_t) floor((image->columns*image->resolution.x)+
-              0.5);
+            image->columns=CastDoubleToSizeT(floor((image->columns*image->resolution.x)+0.5));
           if (image->resolution.y != 0.0)
-            image->rows=(size_t) floor((image->rows*image->resolution.y)+0.5);
+            image->rows=CastDoubleToSizeT(floor((image->rows*image->resolution.y)+0.5));
         }
       else
         {
@@ -550,11 +548,11 @@ static Image *ReadEMFImage(const ImageInfo *image_info,ExceptionInfo *exception)
           flags=ParseMetaGeometry(geometry,&sans,&sans,&image->columns,
             &image->rows);
           if (image->resolution.x != 0.0)
-            image->columns=(size_t) floor(((image->columns*image->resolution.x)/
-              DefaultResolution)+0.5);
+            image->columns=CastDoubleToSizeT(floor(((image->columns*image->resolution.x)/
+              DefaultResolution)+0.5));
           if (image->resolution.y != 0.0)
-            image->rows=(size_t) floor(((image->rows*image->resolution.y)/
-              DefaultResolution)+0.5);
+            image->rows=CastDoubleToSizeT(floor(((image->rows*image->resolution.y)/
+              DefaultResolution)+0.5));
         }
       (void) flags;
       geometry=DestroyString(geometry);
@@ -633,7 +631,7 @@ static Image *ReadEMFImage(const ImageInfo *image_info,ExceptionInfo *exception)
       SetPixelBlue(image,ScaleCharToQuantum(pBits->rgbBlue),q);
       SetPixelAlpha(image,OpaqueAlpha,q);
       pBits++;
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;
@@ -651,10 +649,10 @@ static inline void EMFSetDimensions(Image * image,Gdiplus::Image *source)
   if ((image->resolution.x <= 0.0) || (image->resolution.y <= 0.0))
     return;
 
-  image->columns=(size_t) floor((Gdiplus::REAL) source->GetWidth()/
-    source->GetHorizontalResolution()*image->resolution.x+0.5);
-  image->rows=(size_t)floor((Gdiplus::REAL) source->GetHeight()/
-    source->GetVerticalResolution()*image->resolution.y+0.5);
+  image->columns=CastDoubleToSizeT(floor((Gdiplus::REAL) source->GetWidth()/
+    source->GetHorizontalResolution()*image->resolution.x+0.5));
+  image->rows=CastDoubleToSizeT(floor((Gdiplus::REAL) source->GetHeight()/
+    source->GetVerticalResolution()*image->resolution.y+0.5));
 }
 
 static Image *ReadEMFImage(const ImageInfo *image_info,
@@ -711,13 +709,12 @@ static Image *ReadEMFImage(const ImageInfo *image_info,
   if (IsEventLogging() != MagickFalse)
     (void) LogMagickEvent(TraceEvent,GetMagickModule(),"%s",
       image_info->filename);
-
   image=AcquireImage(image_info,exception);
   if (Gdiplus::GdiplusStartup(&token,&startup_input,NULL) != 
     Gdiplus::Status::Ok)
     ThrowReaderException(CoderError, "GdiplusStartupFailed");
   source=(Gdiplus::Image *) NULL;
-  path=create_wchar_path(image->filename);
+  path=NTCreateWidePath(image->filename);
   if (path != (wchar_t *) NULL)
     {
       source=Gdiplus::Image::FromFile(path);
@@ -728,7 +725,6 @@ static Image *ReadEMFImage(const ImageInfo *image_info,
       Gdiplus::GdiplusShutdown(token);
       ThrowReaderException(FileOpenError,"UnableToOpenFile");
     }
-
   image->resolution.x=source->GetHorizontalResolution();
   image->resolution.y=source->GetVerticalResolution();
   image->columns=(size_t) source->GetWidth();
@@ -773,7 +769,6 @@ static Image *ReadEMFImage(const ImageInfo *image_info,
       Gdiplus::GdiplusShutdown(token);
       return(image);
     }
-
   bitmap=new Gdiplus::Bitmap((INT) image->columns,(INT) image->rows,
     PixelFormat32bppARGB);
   graphics=Gdiplus::Graphics::FromImage(bitmap);
@@ -781,23 +776,21 @@ static Image *ReadEMFImage(const ImageInfo *image_info,
   graphics->SetSmoothingMode(Gdiplus::SmoothingModeHighQuality);
   graphics->SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
   graphics->Clear(Gdiplus::Color((BYTE) ScaleQuantumToChar(
-    image->background_color.alpha),(BYTE) ScaleQuantumToChar(
-    image->background_color.red),(BYTE) ScaleQuantumToChar(
-    image->background_color.green),(BYTE) ScaleQuantumToChar(
-    image->background_color.blue)));
+    (Quantum) image->background_color.alpha),(BYTE) ScaleQuantumToChar(
+    (Quantum) image->background_color.red),(BYTE) ScaleQuantumToChar(
+    (Quantum) image->background_color.green),(BYTE) ScaleQuantumToChar(
+    (Quantum) image->background_color.blue)));
   graphics->DrawImage(source,0,0,(INT) image->columns,(INT) image->rows);
   delete graphics;
   delete source;
-
   rect=Gdiplus::Rect(0,0,(INT) image->columns,(INT) image->rows);
   if (bitmap->LockBits(&rect,Gdiplus::ImageLockModeRead,PixelFormat32bppARGB,
-    &bitmap_data) != Gdiplus::Ok)
-  {
-    delete bitmap;
-    Gdiplus::GdiplusShutdown(token);
-    ThrowReaderException(FileOpenError,"UnableToReadImageData");
-  }
-
+        &bitmap_data) != Gdiplus::Ok)
+    {
+      delete bitmap;
+      Gdiplus::GdiplusShutdown(token);
+      ThrowReaderException(FileOpenError,"UnableToReadImageData");
+    }
   for (y=0; y < (ssize_t) image->rows; y++)
   {
     p=(unsigned char *) bitmap_data.Scan0+(y*abs(bitmap_data.Stride));
@@ -814,13 +807,12 @@ static Image *ReadEMFImage(const ImageInfo *image_info,
       SetPixelGreen(image,ScaleCharToQuantum(*p++),q);
       SetPixelRed(image,ScaleCharToQuantum(*p++),q);
       SetPixelAlpha(image,ScaleCharToQuantum(*p++),q);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
 
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;
   }
-
   bitmap->UnlockBits(&bitmap_data);
   delete bitmap;
   Gdiplus::GdiplusShutdown(token);

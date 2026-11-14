@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -103,11 +103,11 @@ static inline MagickBooleanType PlasmaPixel(Image *image,
     exception);
   if (q == (Quantum *) NULL)
     return(MagickFalse);
-  SetPixelRed(image,((double) QuantumRange*GetPseudoRandomValue(random_info)+
+  SetPixelRed(image,(Quantum) ((double) QuantumRange*GetPseudoRandomValue(random_info)+
     0.5),q);
-  SetPixelGreen(image,((double) QuantumRange*GetPseudoRandomValue(random_info)+
+  SetPixelGreen(image,(Quantum) ((double) QuantumRange*GetPseudoRandomValue(random_info)+
     0.5),q);
-  SetPixelBlue(image,((double) QuantumRange*GetPseudoRandomValue(random_info)+
+  SetPixelBlue(image,(Quantum) ((double) QuantumRange*GetPseudoRandomValue(random_info)+
     0.5),q);
   return(SyncAuthenticPixels(image,exception));
 }
@@ -165,7 +165,7 @@ static Image *ReadPlasmaImage(const ImageInfo *image_info,
     for (x=0; x < (ssize_t) image->columns; x++)
     {
       SetPixelAlpha(image,QuantumRange/2,q);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;

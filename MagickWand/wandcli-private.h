@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,8 +27,12 @@ extern "C" {
        "`%s'",option)
 
 #define CLIWandExceptionArg(severity,tag,option,arg) \
-  (void) CLIThrowException(cli_wand,GetMagickModule(),severity,tag, \
-       "'%s' '%s'",option, arg)
+  { \
+    char *message = GetExceptionMessage(errno); \
+    (void) CLIThrowException(cli_wand,GetMagickModule(),severity,tag, \
+      "'%s' '%s'",option, arg == (char *) NULL ? message : arg); \
+    message=DestroyString(message); \
+  }
 
 #define CLIWandWarnReplaced(message) \
   if ( (cli_wand->process_flags & ProcessWarnDeprecated) != 0 ) \
@@ -36,9 +40,10 @@ extern "C" {
        "ReplacedOption", "'%s', use \"%s\"",option,message)
 
 #define CLIWandExceptionFile(severity,tag,context) \
-{ char *message=GetExceptionMessage(errno); \
+{  \
+  char *message=GetExceptionMessage(errno); \
   (void) CLIThrowException(cli_wand,GetMagickModule(),severity,tag, \
-       "'%s': %s",context,message); \
+    "'%s': %s",context,message); \
   message=DestroyString(message); \
 }
 

@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -70,7 +70,6 @@
 /*
   Define declarations.
 */
-#define MagickPathTemplate "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"  /* min 6 X's */
 #define NumberOfResourceTypes  \
   (sizeof(resource_semaphore)/sizeof(*resource_semaphore))
 
@@ -136,7 +135,7 @@ static ResourceInfo
     MagickULLConstant(768),            /* file limit */
     MagickULLConstant(1),              /* thread limit */
     MagickULLConstant(0),              /* throttle limit */
-    MagickULLConstant(0),              /* time limit */
+    MagickResourceInfinity,            /* time limit */
   };
 
 static SemaphoreInfo
@@ -236,7 +235,7 @@ MagickExport MagickBooleanType AcquireMagickResource(const ResourceType type,
     {
       bi=MagickTrue;
       limit=resource_info.disk_limit;
-      if (((MagickSizeType) resource_info.disk+(MagickSizeType) request) > (MagickSizeType) resource_info.disk)
+      if (resource_info.disk <= (MagickOffsetMax-request))
         {
           resource_info.disk+=request;
           if ((limit == MagickResourceInfinity) ||
@@ -251,7 +250,7 @@ MagickExport MagickBooleanType AcquireMagickResource(const ResourceType type,
     case FileResource:
     {
       limit=resource_info.file_limit;
-      if (((MagickSizeType) resource_info.file+(MagickSizeType) request) > (MagickSizeType) resource_info.file)
+      if (resource_info.file <= (MagickOffsetMax-request))
         {
           resource_info.file+=request;
           if ((limit == MagickResourceInfinity) ||
@@ -282,7 +281,7 @@ MagickExport MagickBooleanType AcquireMagickResource(const ResourceType type,
     {
       bi=MagickTrue;
       limit=resource_info.map_limit;
-      if (((MagickSizeType) resource_info.map+(MagickSizeType) request) > (MagickSizeType) resource_info.map)
+      if (resource_info.map <= (MagickOffsetMax-request))
         {
           resource_info.map+=request;
           if ((limit == MagickResourceInfinity) ||
@@ -298,7 +297,7 @@ MagickExport MagickBooleanType AcquireMagickResource(const ResourceType type,
     {
       bi=MagickTrue;
       limit=resource_info.memory_limit;
-      if (((MagickSizeType) resource_info.memory+(MagickSizeType) request) > (MagickSizeType) resource_info.memory)
+      if (resource_info.memory <= (MagickOffsetMax-request))
         {
           resource_info.memory+=request;
           if ((limit == MagickResourceInfinity) ||
@@ -329,10 +328,11 @@ MagickExport MagickBooleanType AcquireMagickResource(const ResourceType type,
     case TimeResource:
     {
       limit=resource_info.time_limit;
-      if (((MagickSizeType) resource_info.time+(MagickSizeType) request) > (MagickSizeType) resource_info.time)
+      if (resource_info.time <= (MagickOffsetMax-request))
         {
           resource_info.time+=request;
-          if ((limit == 0) || (resource_info.time < (MagickOffsetType) limit))
+          if ((limit == MagickResourceInfinity) ||
+              (resource_info.time < (MagickOffsetType) limit))
             status=MagickTrue;
           else
             resource_info.time-=request;
@@ -461,104 +461,17 @@ static void *DestroyTemporaryResources(void *temporary_resource)
   return((void *) NULL);
 }
 
-MagickExport MagickBooleanType GetPathTemplate(char *path)
-{
-  char
-    *directory,
-    *value;
-
-  ExceptionInfo
-    *exception;
-
-  MagickBooleanType
-    status;
-
-  struct stat
-    attributes;
-
-  (void) FormatLocaleString(path,MagickPathExtent,"magick-" MagickPathTemplate);
-  exception=AcquireExceptionInfo();
-  directory=(char *) GetImageRegistry(StringRegistryType,"temporary-path",
-    exception);
-  exception=DestroyExceptionInfo(exception);
-  if (directory == (char *) NULL)
-    directory=GetEnvironmentValue("MAGICK_TEMPORARY_PATH");
-  if (directory == (char *) NULL)
-    directory=GetEnvironmentValue("MAGICK_TMPDIR");
-  if (directory == (char *) NULL)
-    directory=GetEnvironmentValue("TMPDIR");
-#if defined(MAGICKCORE_WINDOWS_SUPPORT) || defined(__OS2__) || defined(__CYGWIN__)
-  if (directory == (char *) NULL)
-    directory=GetEnvironmentValue("TMP");
-  if (directory == (char *) NULL)
-    directory=GetEnvironmentValue("TEMP");
-#endif
-#if defined(__VMS)
-  if (directory == (char *) NULL)
-    directory=GetEnvironmentValue("MTMPDIR");
-#endif
-#if defined(P_tmpdir)
-  if (directory == (char *) NULL)
-    directory=ConstantString(P_tmpdir);
-#endif
-  if (directory == (char *) NULL)
-    return(MagickTrue);
-  value=GetPolicyValue("resource:temporary-path");
-  if (value != (char *) NULL)
-    {
-      (void) CloneString(&directory,value);
-      value=DestroyString(value);
-    }
-  if (strlen(directory) > (MagickPathExtent-25))
-    {
-      directory=DestroyString(directory);
-      return(MagickFalse);
-    }
-  status=GetPathAttributes(directory,&attributes);
-  if ((status == MagickFalse) || !S_ISDIR(attributes.st_mode))
-    {
-      directory=DestroyString(directory);
-      return(MagickFalse);
-    }
-  if (directory[strlen(directory)-1] == *DirectorySeparator)
-    (void) FormatLocaleString(path,MagickPathExtent,"%smagick-"
-      MagickPathTemplate,directory);
-  else
-    (void) FormatLocaleString(path,MagickPathExtent,
-      "%s%smagick-" MagickPathTemplate,directory,DirectorySeparator);
-  directory=DestroyString(directory);
-#if defined(MAGICKCORE_WINDOWS_SUPPORT)
-  {
-    char
-      *p;
-
-    /*
-      Ghostscript does not like backslashes so we need to replace them. The
-      forward slash also works under Windows.
-    */
-    for (p=(path[1] == *DirectorySeparator ? path+2 : path); *p != '\0'; p++)
-      if (*p == *DirectorySeparator)
-        *p='/';
-  }
-#endif
-  return(MagickTrue);
-}
-
 MagickExport int AcquireUniqueFileResource(char *path)
 {
-#if !defined(O_NOFOLLOW)
-#define O_NOFOLLOW 0
-#endif
-#if !defined(TMP_MAX)
-# define TMP_MAX  238328
-#endif
-
   int
     c,
     file;
 
   char
     *p;
+
+  MagickBooleanType
+    status;
 
   ssize_t
     i;
@@ -569,6 +482,9 @@ MagickExport int AcquireUniqueFileResource(char *path)
 
   StringInfo
     *key;
+
+  struct stat
+    *attributes;
 
   unsigned char
     *datum;
@@ -626,7 +542,7 @@ MagickExport int AcquireUniqueFileResource(char *path)
       *p++=portable_filename[c];
     }
     key=DestroyStringInfo(key);
-    file=open_utf8(path,O_RDWR | O_CREAT | O_EXCL | O_BINARY | O_NOFOLLOW,
+    file=open_utf8(path,O_RDWR | O_CLOEXEC | O_CREAT | O_EXCL | O_BINARY | O_NOFOLLOW,
       S_MODE);
     if ((file >= 0) || (errno != EEXIST))
       break;
@@ -640,10 +556,17 @@ MagickExport int AcquireUniqueFileResource(char *path)
   LockSemaphoreInfo(resource_semaphore[FileResource]);
   if (temporary_resources == (SplayTreeInfo *) NULL)
     temporary_resources=NewSplayTree(CompareSplayTreeString,
-      DestroyTemporaryResources,(void *(*)(void *)) NULL);
+      DestroyTemporaryResources,RelinquishMagickMemory);
   UnlockSemaphoreInfo(resource_semaphore[FileResource]);
-  (void) AddValueToSplayTree(temporary_resources,ConstantString(path),
-    (const void *) NULL);
+  attributes=(struct stat *) AcquireCriticalMemory(sizeof(struct stat));
+  status=GetPathAttributes(path,attributes);
+  if (status == MagickFalse)
+    attributes=(struct stat *) RelinquishMagickMemory(attributes);
+  else
+    status=AddValueToSplayTree(temporary_resources,ConstantString(path),
+      attributes);
+  if (status == MagickFalse)
+    file=close_utf8(file)-1;
   return(file);
 }
 
@@ -771,6 +694,58 @@ MagickExport MagickSizeType GetMagickResource(const ResourceType type)
 %                                                                             %
 %                                                                             %
 %                                                                             %
+%   I s F i l e R e s o u r c e I d e n t i t y V a l i d                     %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  IsFileResourceIdentityValid() returns MagickTrue if the file resource
+%  identity is valid.
+%
+%  The format of the IsFileResourceIdentityValid() method is:
+%
+%      MagickBooleanType IsFileResourceIdentityValid(const char *path)
+%
+%  A description of each parameter follows:
+%
+%    o path: the file resource path.
+%
+*/
+MagickExport MagickBooleanType IsFileResourceIdentityValid(const char *path)
+{
+  const struct stat
+    *temporary_attributes;
+
+  MagickBooleanType
+    status = MagickTrue;
+
+  struct stat
+    attributes;
+
+  if (temporary_resources == (SplayTreeInfo *) NULL)
+    return(MagickTrue);
+  LockSemaphoreInfo(resource_semaphore[FileResource]);
+  temporary_attributes=(const struct stat *) GetValueFromSplayTree(
+    temporary_resources,(const void *) path);
+  if (temporary_attributes != (const struct stat *) NULL)
+    {
+      status=GetPathAttributes(path,&attributes);
+      if (status != MagickFalse)
+        if ((attributes.st_dev != temporary_attributes->st_dev) ||
+            (attributes.st_ino != temporary_attributes->st_ino) ||
+            (attributes.st_mode != temporary_attributes->st_mode))
+          status=MagickFalse;
+    }
+  UnlockSemaphoreInfo(resource_semaphore[FileResource]);
+  return(status);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
 %   G e t M a g i c k R e s o u r c e L i m i t                               %
 %                                                                             %
 %                                                                             %
@@ -792,7 +767,7 @@ MagickExport MagickSizeType GetMagickResourceLimit(const ResourceType type)
 {
   MagickSizeType
     resource;
-  
+
   switch (type)
   {
     case AreaResource:
@@ -970,7 +945,7 @@ MagickExport MagickBooleanType ListMagickResourceInfo(FILE *file,
     (void) FormatMagickSize(resource_info.disk_limit,MagickTrue,"B",
       MagickFormatExtent,disk_limit);
   (void) CopyMagickString(time_limit,"unlimited",MagickFormatExtent);
-  if (resource_info.time_limit != 0)
+  if (resource_info.time_limit != MagickResourceInfinity)
     FormatTimeToLive(resource_info.time_limit,time_limit);
   (void) FormatLocaleFile(file,"Resource limits:\n");
   (void) FormatLocaleFile(file,"  Width: %s\n",width_limit);
@@ -980,11 +955,11 @@ MagickExport MagickBooleanType ListMagickResourceInfo(FILE *file,
   (void) FormatLocaleFile(file,"  Memory: %s\n",memory_limit);
   (void) FormatLocaleFile(file,"  Map: %s\n",map_limit);
   (void) FormatLocaleFile(file,"  Disk: %s\n",disk_limit);
-  (void) FormatLocaleFile(file,"  File: %.20g\n",(double) ((MagickOffsetType)
+  (void) FormatLocaleFile(file,"  File: %.17g\n",(double) ((MagickOffsetType)
     resource_info.file_limit));
-  (void) FormatLocaleFile(file,"  Thread: %.20g\n",(double) ((MagickOffsetType)
+  (void) FormatLocaleFile(file,"  Thread: %.17g\n",(double) ((MagickOffsetType)
     resource_info.thread_limit));
-  (void) FormatLocaleFile(file,"  Throttle: %.20g\n",(double)
+  (void) FormatLocaleFile(file,"  Throttle: %.17g\n",(double)
     ((MagickOffsetType) resource_info.throttle_limit));
   (void) FormatLocaleFile(file,"  Time: %s\n",time_limit);
   (void) fflush(file);
@@ -1252,7 +1227,7 @@ MagickPrivate MagickBooleanType ResourceComponentGenesis(void)
   if ((pagesize <= 0) || (pages <= 0))
     memory=2048UL*1024UL*1024UL;
 #if defined(MAGICKCORE_PixelCacheThreshold)
-  memory=MAGICKCORE_PixelCacheThreshold;
+  memory=StringToMagickSizeType(MAGICKCORE_PixelCacheThreshold,100.0);
 #endif
   (void) SetMagickResourceLimit(AreaResource,4*memory);
   limit=GetEnvironmentValue("MAGICK_AREA_LIMIT");
@@ -1334,7 +1309,7 @@ MagickPrivate MagickBooleanType ResourceComponentGenesis(void)
         limit,100.0));
       limit=DestroyString(limit);
     }
-  (void) SetMagickResourceLimit(TimeResource,0);
+  (void) SetMagickResourceLimit(TimeResource,MagickResourceInfinity);
   limit=GetEnvironmentValue("MAGICK_TIME_LIMIT");
   if (limit != (char *) NULL)
     {
@@ -1352,6 +1327,43 @@ MagickPrivate MagickBooleanType ResourceComponentGenesis(void)
     }
   return(MagickTrue);
 }
+
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   R e s e t M a g i c k R e s o u r c e C o u n t e r s                     %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  ResetMagickResourceCounters() resets the current resource usage counters
+%  to zero. This is useful for fuzzing to ensure deterministic behavior
+%  between iterations.
+%
+%  The format of the ResetMagickResourceCounters() method is:
+%
+%      void ResetMagickResourceCounters(void)
+%
+*/
+MagickExport void ResetMagickResourceCounters(void)
+{
+  resource_info.width=0;
+  resource_info.height=0;
+  resource_info.list_length=0;
+  resource_info.area=0;
+  resource_info.memory=0;
+  resource_info.map=0;
+  resource_info.disk=0;
+  resource_info.file=0;
+  resource_info.thread=0;
+  resource_info.throttle=0;
+  resource_info.time=0;
+}
+#endif
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

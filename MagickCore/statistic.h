@@ -1,12 +1,12 @@
 /*
   Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization
   dedicated to making software imaging solutions freely available.
-  
+
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
-  
-    https://imagemagick.org/script/license.php
-  
+
+    https://imagemagick.org/license/
+
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -73,8 +73,8 @@ typedef struct _ChannelMoments
 typedef struct _ChannelPerceptualHash
 {
   double
-    srgb_hu_phash[MaximumNumberOfImageMoments+1],
-    hclp_hu_phash[MaximumNumberOfImageMoments+1];
+    srgb_hu_phash[MaximumNumberOfPerceptualHashes+2],
+    hclp_hu_phash[MaximumNumberOfPerceptualHashes+2];
 
   size_t
     number_colorspaces;
@@ -83,7 +83,7 @@ typedef struct _ChannelPerceptualHash
     colorspace[MaximumNumberOfPerceptualColorspaces+1];
 
   double
-    phash[MaximumNumberOfPerceptualColorspaces+1][MaximumNumberOfImageMoments+1];
+    phash[MaximumNumberOfPerceptualColorspaces+1][MaximumNumberOfPerceptualHashes+2];
 
   size_t
     number_channels;

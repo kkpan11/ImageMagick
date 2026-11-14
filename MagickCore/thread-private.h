@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -48,26 +48,28 @@ extern "C" {
 #endif
 
 static inline int GetMagickNumberThreads(const Image *source,
-  const Image *destination,const size_t chunk,const int factor)
+  const Image *destination,const size_t chunk,const double factor)
 {
-#define WorkLoadFactor  (64UL << factor)
-
   const CacheType
     destination_type = (CacheType) GetImagePixelCacheType(destination),
     source_type = (CacheType) GetImagePixelCacheType(source);
 
-  int
-    number_threads;
+  size_t
+    max_threads = (size_t) GetMagickResourceLimit(ThreadResource),
+    number_threads = 1UL,
+    pixels_per_thread = CastDoubleToSizeT(262144.0*factor);
 
-  /*
-    Return number of threads dependent on cache type and work load.
-  */
-  number_threads=(int) MagickMax(MagickMin(chunk/WorkLoadFactor,
-    GetMagickResourceLimit(ThreadResource)),1);
+  if (pixels_per_thread != 0)
+    {
+      const size_t total_pixels = chunk*source->columns;
+      number_threads=(total_pixels < pixels_per_thread) ? 1UL :
+        MagickMin(max_threads,(total_pixels+pixels_per_thread-1)/
+        pixels_per_thread);
+    }
   if (((source_type != MemoryCache) && (source_type != MapCache)) ||
       ((destination_type != MemoryCache) && (destination_type != MapCache)))
-    number_threads=MagickMin(number_threads,2);
-  return(number_threads);
+    number_threads=MagickMin(number_threads,4UL);
+  return((int) number_threads);
 }
 
 static inline MagickThreadType GetMagickThreadId(void)
@@ -79,6 +81,30 @@ static inline MagickThreadType GetMagickThreadId(void)
 #else
   return(getpid());
 #endif
+}
+
+static inline void GetMagickThreadFilename(const char *filename,
+  char *thread_filename)
+{
+  MagickThreadType
+    id;
+
+  char
+    thread_id[2*sizeof(id)+1];
+
+  ssize_t
+    i;
+
+  unsigned char
+    bytes[sizeof(id)];
+
+  id=GetMagickThreadId();
+  (void) memcpy(bytes,&id,sizeof(id));
+  for (i=0; i < (ssize_t) sizeof(bytes); i++)
+    (void) FormatLocaleString(thread_id+2*i,MagickPathExtent,"%02x",bytes[i]);
+  thread_id[sizeof(thread_id)-1]='\0';
+  (void) FormatLocaleString(thread_filename,MagickPathExtent,"%s|%s",thread_id,
+    filename);
 }
 
 static inline size_t GetMagickThreadSignature(void)
@@ -153,11 +179,15 @@ static inline void SetOpenMPMaximumThreads(const int magick_unused(threads))
 }
 
 #if defined(MAGICKCORE_OPENMP_SUPPORT)
-static inline void SetOpenMPNested(const int value)
+static inline void SetOpenMPMaxActiveLevels(const int value)
 {
+#if defined(MAGICKCORE_WINDOWS_SUPPORT) && !defined(__MINGW32__)
   omp_set_nested(value);
 #else
-static inline void SetOpenMPNested(const int magick_unused(value))
+  omp_set_max_active_levels(value ? 2 : 1);
+#endif
+#else
+static inline void SetOpenMPMaxActiveLevels(const int magick_unused(value))
 {
   magick_unreferenced(value);
 #endif

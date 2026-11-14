@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -406,7 +406,7 @@ static MagickBooleanType Classify(Image *image,short **extrema,
             cluster->count++;
             break;
           }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (image->progress_monitor != (MagickProgressMonitor) NULL)
       {
@@ -467,7 +467,7 @@ static MagickBooleanType Classify(Image *image,short **extrema,
         cluster_threshold);
       (void) FormatLocaleFile(stdout,"\tWeighting Exponent = %g\n",(double)
         weighting_exponent);
-      (void) FormatLocaleFile(stdout,"\tTotal Number of Clusters = %.20g\n\n",
+      (void) FormatLocaleFile(stdout,"\tTotal Number of Clusters = %.17g\n\n",
         (double) number_clusters);
       /*
         Print the total number of points per cluster.
@@ -475,7 +475,7 @@ static MagickBooleanType Classify(Image *image,short **extrema,
       (void) FormatLocaleFile(stdout,"\n\nNumber of Vectors Per Cluster\n");
       (void) FormatLocaleFile(stdout,"=============================\n\n");
       for (cluster=head; cluster != (Cluster *) NULL; cluster=cluster->next)
-        (void) FormatLocaleFile(stdout,"Cluster #%.20g = %.20g\n",(double)
+        (void) FormatLocaleFile(stdout,"Cluster #%.17g = %.17g\n",(double)
           cluster->id,(double) cluster->count);
       /*
         Print the cluster extents.
@@ -485,10 +485,10 @@ static MagickBooleanType Classify(Image *image,short **extrema,
       (void) FormatLocaleFile(stdout,"================");
       for (cluster=head; cluster != (Cluster *) NULL; cluster=cluster->next)
       {
-        (void) FormatLocaleFile(stdout,"\n\nCluster #%.20g\n\n",(double)
+        (void) FormatLocaleFile(stdout,"\n\nCluster #%.17g\n\n",(double)
           cluster->id);
         (void) FormatLocaleFile(stdout,
-          "%.20g-%.20g  %.20g-%.20g  %.20g-%.20g\n",(double)
+          "%.17g-%.17g  %.17g-%.17g  %.17g-%.17g\n",(double)
           cluster->red.left,(double) cluster->red.right,(double)
           cluster->green.left,(double) cluster->green.right,(double)
           cluster->blue.left,(double) cluster->blue.right);
@@ -501,7 +501,7 @@ static MagickBooleanType Classify(Image *image,short **extrema,
       (void) FormatLocaleFile(stdout,"=====================");
       for (cluster=head; cluster != (Cluster *) NULL; cluster=cluster->next)
       {
-        (void) FormatLocaleFile(stdout,"\n\nCluster #%.20g\n\n",(double)
+        (void) FormatLocaleFile(stdout,"\n\nCluster #%.17g\n\n",(double)
           cluster->id);
         (void) FormatLocaleFile(stdout,"%g  %g  %g\n",(double)
           cluster->red.center,(double) cluster->green.center,(double)
@@ -615,17 +615,17 @@ static MagickBooleanType Classify(Image *image,short **extrema,
             sum=0.0;
             p=image->colormap+j;
             distance_squared=
-              squares[(ssize_t) (pixel.red-ScaleQuantumToChar(p->red))]+
-              squares[(ssize_t) (pixel.green-ScaleQuantumToChar(p->green))]+
-              squares[(ssize_t) (pixel.blue-ScaleQuantumToChar(p->blue))];
+              squares[(ssize_t) (pixel.red-ScaleQuantumToChar((const Quantum) p->red))]+
+              squares[(ssize_t) (pixel.green-ScaleQuantumToChar((const Quantum) p->green))]+
+              squares[(ssize_t) (pixel.blue-ScaleQuantumToChar((const Quantum) p->blue))];
             numerator=distance_squared;
             for (k=0; k < (ssize_t) image->colors; k++)
             {
               p=image->colormap+k;
               distance_squared=
-                squares[(ssize_t) (pixel.red-ScaleQuantumToChar(p->red))]+
-                squares[(ssize_t) (pixel.green-ScaleQuantumToChar(p->green))]+
-                squares[(ssize_t) (pixel.blue-ScaleQuantumToChar(p->blue))];
+                squares[(ssize_t) (pixel.red-ScaleQuantumToChar((const Quantum) p->red))]+
+                squares[(ssize_t) (pixel.green-ScaleQuantumToChar((const Quantum) p->green))]+
+                squares[(ssize_t) (pixel.blue-ScaleQuantumToChar((const Quantum) p->blue))];
               ratio=numerator/distance_squared;
               sum+=SegmentPower(ratio);
             }
@@ -639,7 +639,7 @@ static MagickBooleanType Classify(Image *image,short **extrema,
               }
           }
         }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -1109,7 +1109,7 @@ MagickExport MagickBooleanType GetImageDynamicThreshold(const Image *image,
             cluster->count++;
             break;
           }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     proceed=SetImageProgress(image,SegmentImageTag,(MagickOffsetType) y,
       2*image->rows);
@@ -1254,7 +1254,7 @@ static void InitializeHistogram(const Image *image,ssize_t **histogram,
       histogram[Red][(ssize_t) ScaleQuantumToChar(GetPixelRed(image,p))]++;
       histogram[Green][(ssize_t) ScaleQuantumToChar(GetPixelGreen(image,p))]++;
       histogram[Blue][(ssize_t) ScaleQuantumToChar(GetPixelBlue(image,p))]++;
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
   }
 }
@@ -1681,7 +1681,7 @@ static double OptimalTau(const ssize_t *histogram,const double max_tau,
   average_tau=0.0;
   for (i=0; i < number_nodes; i++)
     average_tau+=list[i]->tau;
-  average_tau*=PerceptibleReciprocal((double) number_nodes);
+  average_tau*=MagickSafeReciprocal((double) number_nodes);
   /*
     Relinquish resources.
   */
@@ -1731,8 +1731,8 @@ static void ScaleSpace(const ssize_t *histogram,const double tau,
   gamma=(double *) AcquireQuantumMemory(256,sizeof(*gamma));
   if (gamma == (double *) NULL)
     ThrowFatalException(ResourceLimitFatalError,"UnableToAllocateGammaMap");
-  alpha=PerceptibleReciprocal(tau*sqrt(2.0*MagickPI));
-  beta=(-1.0*PerceptibleReciprocal(2.0*tau*tau));
+  alpha=MagickSafeReciprocal(tau*sqrt(2.0*MagickPI));
+  beta=(-1.0*MagickSafeReciprocal(2.0*tau*tau));
   for (x=0; x <= 255; x++)
     gamma[x]=0.0;
   for (x=0; x <= 255; x++)

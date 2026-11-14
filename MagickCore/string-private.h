@@ -1,11 +1,11 @@
 /*
-  Copyright @ 2003 ImageMagick Studio LLC, a non-profit organization
+  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization
   dedicated to making software imaging solutions freely available.
 
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,6 +24,31 @@
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
 #endif
+
+static inline int MagickSscanf(const char *buffer,const char *format,...)
+{
+  int
+    ret;
+
+  va_list
+    args;
+
+  /*
+    Custom implementation so we can use sscanf without defining
+    _CRT_SECURE_NO_WARNINGS.
+  */
+  va_start(args,format);
+#if defined(_MSC_VER)
+  #pragma warning(push)
+  #pragma warning(disable:4996)
+#endif
+  ret=vsscanf(buffer,format,args);
+#if defined(_MSC_VER)
+  #pragma warning(pop)
+#endif
+  va_end(args);
+  return(ret);
+}
 
 static inline double SiPrefixToDoubleInterval(const char *string,
   const double interval)
@@ -44,6 +69,12 @@ static inline double StringToDouble(const char *magick_restrict string,
   char *magick_restrict *sentinel)
 {
   return(InterpretLocaleValue(string,sentinel));
+}
+
+static inline float StringToFloat(const char *magick_restrict string,
+  char *magick_restrict *sentinel)
+{
+  return((float) InterpretLocaleValue(string,sentinel));
 }
 
 static inline const char *StringLocateSubstring(const char *haystack,

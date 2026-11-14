@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -262,6 +262,9 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
   */
   image->alpha_trait=rla_info.number_matte_channels != 0 ? BlendPixelTrait : 
     UndefinedPixelTrait;
+  if ((rla_info.active_window.right < rla_info.active_window.left) ||
+      (rla_info.active_window.top < rla_info.active_window.bottom))
+    ThrowReaderException(CorruptImageError,"ImproperImageHeader");
   image->columns=(size_t) (rla_info.active_window.right-
     rla_info.active_window.left+1);
   image->rows=(size_t) (rla_info.active_window.top-
@@ -413,6 +416,8 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
     ThrowFileException(exception,CorruptImageError,"UnexpectedEndOfFile",
       image->filename);
   if (CloseBlob(image) == MagickFalse)
+    status=MagickFalse;
+  if (GetBlobError(image) != MagickFalse)
     status=MagickFalse;
   if (status == MagickFalse)
     return(DestroyImageList(image));

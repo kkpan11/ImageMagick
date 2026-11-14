@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -182,8 +182,8 @@ static MagickBooleanType ChannelImage(Image *destination_image,
       else
         SetPixelChannel(destination_image,destination_channel,
           GetPixelChannel(source_image,source_channel,p),q);
-      p+=GetPixelChannels(source_image);
-      q+=GetPixelChannels(destination_image);
+      p+=(ptrdiff_t) GetPixelChannels(source_image);
+      q+=(ptrdiff_t) GetPixelChannels(destination_image);
     }
     if (SyncCacheViewAuthenticPixels(destination_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -512,6 +512,9 @@ MagickExport Image *CombineImages(const Image *image,
   MagickOffsetType
     progress;
 
+  size_t
+    number_channels;
+
   ssize_t
     y;
 
@@ -539,26 +542,33 @@ MagickExport Image *CombineImages(const Image *image,
       (void) SetImageColorspace(combine_image,RGBColorspace,exception);
     else
       (void) SetImageColorspace(combine_image,sRGBColorspace,exception);
+  number_channels=GetImageListLength(image);
   switch (combine_image->colorspace)
   {
     case UndefinedColorspace:
     case sRGBColorspace:
     {
-      if (GetImageListLength(image) > 3)
+      if (number_channels > 3)
         combine_image->alpha_trait=BlendPixelTrait;
+      if (number_channels > 4)
+        SetPixelMetaChannels(combine_image,number_channels-4,exception);
       break;
     }
     case LinearGRAYColorspace:
     case GRAYColorspace:
     {
-      if (GetImageListLength(image) > 1)
+      if (number_channels > 1)
         combine_image->alpha_trait=BlendPixelTrait;
+      if (number_channels > 2)
+        SetPixelMetaChannels(combine_image,number_channels-2,exception);
       break;
     }
     case CMYKColorspace:
     {
-      if (GetImageListLength(image) > 4)
+      if (number_channels > 4)
         combine_image->alpha_trait=BlendPixelTrait;
+      if (number_channels > 5)
+        SetPixelMetaChannels(combine_image,number_channels-5,exception);
       break;
     }
     default:
@@ -622,10 +632,10 @@ MagickExport Image *CombineImages(const Image *image,
       {
         if (x < (ssize_t) next->columns)
           {
-            q[i]=GetPixelIntensity(next,p);
-            p+=GetPixelChannels(next);
+            q[i]=(Quantum) GetPixelIntensity(next,p);
+            p+=(ptrdiff_t) GetPixelChannels(next);
           }
-        q+=GetPixelChannels(combine_image);
+        q+=(ptrdiff_t) GetPixelChannels(combine_image);
       }
       image_view=DestroyCacheView(image_view);
       next=GetNextImageInList(next);
@@ -650,6 +660,8 @@ MagickExport Image *CombineImages(const Image *image,
   combine_view=DestroyCacheView(combine_view);
   if (status == MagickFalse)
     combine_image=DestroyImage(combine_image);
+  else
+    combine_image->type=UndefinedType;
   return(combine_image);
 }
 
@@ -803,8 +815,8 @@ MagickExport Image *SeparateImage(const Image *image,
           continue;
         SetPixelChannel(separate_image,GrayPixelChannel,p[i],q);
       }
-      p+=GetPixelChannels(image);
-      q+=GetPixelChannels(separate_image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(separate_image);
     }
     if (SyncCacheViewAuthenticPixels(separate_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -935,7 +947,7 @@ static inline void FlattenPixelInfo(const Image *image,const PixelInfo *p,
   Sa=QuantumScale*alpha;
   Da=QuantumScale*beta,
   gamma=Sa*(-Da)+Sa+Da;
-  gamma=PerceptibleReciprocal(gamma);
+  gamma=MagickSafeReciprocal(gamma);
   for (i=0; i < (ssize_t) GetPixelChannels(image); i++)
   {
     PixelChannel channel = GetPixelChannelChannel(image,i);
@@ -1054,7 +1066,7 @@ MagickExport MagickBooleanType SetImageAlphaChannel(Image *image,
               continue;
             q[i]=ClampToQuantum(gamma*(double) q[i]);
           }
-          q+=GetPixelChannels(image);
+          q+=(ptrdiff_t) GetPixelChannels(image);
         }
         if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
           status=MagickFalse;
@@ -1102,7 +1114,7 @@ MagickExport MagickBooleanType SetImageAlphaChannel(Image *image,
               SetPixelViaPixelInfo(image,&image->background_color,q);
               SetPixelChannel(image,AlphaPixelChannel,TransparentAlpha,q);
             }
-          q+=GetPixelChannels(image);
+          q+=(ptrdiff_t) GetPixelChannels(image);
         }
         if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
           status=MagickFalse;
@@ -1165,7 +1177,7 @@ MagickExport MagickBooleanType SetImageAlphaChannel(Image *image,
             i;
 
           Sa=QuantumScale*(double) GetPixelAlpha(image,q);
-          gamma=PerceptibleReciprocal(Sa);
+          gamma=MagickSafeReciprocal(Sa);
           for (i=0; i < (ssize_t) GetPixelChannels(image); i++)
           {
             PixelChannel channel = GetPixelChannelChannel(image,i);
@@ -1176,7 +1188,7 @@ MagickExport MagickBooleanType SetImageAlphaChannel(Image *image,
               continue;
             q[i]=ClampToQuantum(gamma*(double) q[i]);
           }
-          q+=GetPixelChannels(image);
+          q+=(ptrdiff_t) GetPixelChannels(image);
         }
         if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
           status=MagickFalse;
@@ -1244,7 +1256,7 @@ MagickExport MagickBooleanType SetImageAlphaChannel(Image *image,
               opaque=MagickFalse;
               break;
             }
-          p+=GetPixelChannels(image);
+          p+=(ptrdiff_t) GetPixelChannels(image);
         }
       }
       image_view=DestroyCacheView(image_view);
@@ -1300,7 +1312,7 @@ MagickExport MagickBooleanType SetImageAlphaChannel(Image *image,
         {
           FlattenPixelInfo(image,&image->background_color,
             image->background_color.alpha,q,(double) GetPixelAlpha(image,q),q);
-          q+=GetPixelChannels(image);
+          q+=(ptrdiff_t) GetPixelChannels(image);
         }
         if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
           status=MagickFalse;
@@ -1359,7 +1371,7 @@ MagickExport MagickBooleanType SetImageAlphaChannel(Image *image,
         {
           pixel.alpha=GetPixelIntensity(image,q);
           SetPixelViaPixelInfo(image,&pixel,q);
-          q+=GetPixelChannels(image);
+          q+=(ptrdiff_t) GetPixelChannels(image);
         }
         if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
           status=MagickFalse;

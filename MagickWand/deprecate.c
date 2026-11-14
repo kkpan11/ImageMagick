@@ -17,13 +17,13 @@
 %                                October 2002                                 %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2002 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -47,6 +47,7 @@
 #include "MagickWand/wand.h"
 #include "MagickCore/exception-private.h"
 #include "MagickCore/monitor-private.h"
+#include "MagickCore/policy-private.h"
 #include "MagickCore/string-private.h"
 #include "MagickCore/thread-private.h"
 #include "MagickCore/utility-private.h"
@@ -106,6 +107,8 @@ static MagickBooleanType ConcatenateImages(int argc,char **argv,
   /*
     Open output file.
   */
+  if (IsPathAuthorized(WritePolicyRights,argv[argc-1]) == MagickFalse)
+    ThrowPolicyException(argv[argc-1],MagickFalse);
   output=fopen_utf8(argv[argc-1],"wb");
   if (output == (FILE *) NULL)
     {
@@ -114,8 +117,10 @@ static MagickBooleanType ConcatenateImages(int argc,char **argv,
       return(MagickFalse);
     }
   status=MagickTrue;
-  for (i=2; i < (ssize_t) (argc-1); i++)
+  for (i=2; i < ((ssize_t) argc-1); i++)
   {
+    if (IsPathAuthorized(ReadPolicyRights,argv[i]) == MagickFalse)
+      ThrowPolicyException(argv[i],MagickFalse);
     input=fopen_utf8(argv[i],"rb");
     if (input == (FILE *) NULL)
       {
@@ -291,6 +296,7 @@ static MagickBooleanType ConvertUsage(void)
       "  -shadow geometry     simulate an image shadow\n"
       "  -sharpen geometry    sharpen the image\n"
       "  -shave geometry      shave pixels from the image edges\n"
+      "  -shuffle strategy    reorders the sequence of images\n"
       "  -shear geometry      slide one edge of the image along the X or Y axis\n"
       "  -sigmoidal-contrast geometry\n"
       "                       increase the contrast without saturating highlights or\n"
@@ -502,8 +508,10 @@ WandExport MagickBooleanType ConvertImageCommand(ImageInfo *image_info,
 }
 #define ThrowConvertException(asperity,tag,option) \
 { \
-  (void) ThrowMagickException(exception,GetMagickModule(),asperity,tag,"`%s'", \
-    option); \
+  char *message = GetExceptionMessage(errno);     \
+  (void) ThrowMagickException(exception,GetMagickModule(),asperity,tag, \
+    "`%s'",option == (char *) NULL ? message : option); \
+  message=DestroyString(message); \
   DestroyConvert(); \
   return(MagickFalse); \
 }
@@ -531,7 +539,7 @@ WandExport MagickBooleanType ConvertImageCommand(ImageInfo *image_info,
   MagickBooleanType
     fire,
     pend,
-    respect_parenthesis;
+    respect_parentheses;
 
   MagickStatusType
     status;
@@ -580,7 +588,7 @@ WandExport MagickBooleanType ConvertImageCommand(ImageInfo *image_info,
   NewImageStack();
   option=(char *) NULL;
   pend=MagickFalse;
-  respect_parenthesis=MagickFalse;
+  respect_parentheses=MagickFalse;
   status=MagickTrue;
   /*
     Parse command-line arguments.
@@ -589,10 +597,10 @@ WandExport MagickBooleanType ConvertImageCommand(ImageInfo *image_info,
   status=ExpandFilenames(&argc,&argv);
   if (status == MagickFalse)
     ThrowConvertException(ResourceLimitError,"MemoryAllocationFailed",
-      GetExceptionMessage(errno));
+      (char *) NULL);
   if ((argc > 2) && (LocaleCompare("-concatenate",argv[1]) == 0))
     return(ConcatenateImages(argc,argv,exception));
-  for (i=1; i < (ssize_t) (argc-1); i++)
+  for (i=1; i < ((ssize_t) argc-1); i++)
   {
     option=argv[i];
     if (LocaleCompare(option,"(") == 0)
@@ -622,7 +630,7 @@ WandExport MagickBooleanType ConvertImageCommand(ImageInfo *image_info,
         */
         FireImageStack(MagickTrue,MagickTrue,pend);
         filename=argv[i];
-        if ((LocaleCompare(filename,"--") == 0) && (i < (ssize_t) (argc-1)))
+        if ((LocaleCompare(filename,"--") == 0) && (i < ((ssize_t) argc-1)))
           filename=argv[++i];
         if (image_info->ping != MagickFalse)
           images=PingImages(image_info,filename,exception);
@@ -2684,7 +2692,7 @@ WandExport MagickBooleanType ConvertImageCommand(ImageInfo *image_info,
           }
         if (LocaleNCompare("respect-parentheses",option+1,17) == 0)
           {
-            respect_parenthesis=(*option == '-') ? MagickTrue : MagickFalse;
+            respect_parentheses=(*option == '-') ? MagickTrue : MagickFalse;
             break;
           }
         if (LocaleCompare("reverse",option+1) == 0)
@@ -2860,6 +2868,23 @@ WandExport MagickBooleanType ConvertImageCommand(ImageInfo *image_info,
               ThrowConvertException(OptionError,"MissingArgument",option);
             if (IsGeometry(argv[i]) == MagickFalse)
               ThrowConvertInvalidArgumentException(option,argv[i]);
+            break;
+          }
+        if (LocaleCompare("shuffle",option+1) == 0)
+          {
+            ssize_t
+              mode;
+
+            mode=UndefinedShuffle;
+            if (*option == '+')
+              break;
+            i++;
+            if (i == (ssize_t) argc)
+              ThrowConvertException(OptionError,"MissingArgument",option);
+            mode=ParseCommandOption(MagickShuffleOptions,MagickFalse,argv[i]);
+            if (mode < 0)
+              ThrowConvertException(OptionError,"UnrecognizedImageOrientation",
+                argv[i]);
             break;
           }
         if (LocaleCompare("sigmoidal-contrast",option+1) == 0)
@@ -3361,7 +3386,7 @@ WandExport MagickBooleanType ConvertImageCommand(ImageInfo *image_info,
   }
   if (k != 0)
     ThrowConvertException(OptionError,"UnbalancedParenthesis",argv[i]);
-  if (i-- != (ssize_t) (argc-1))
+  if (i-- != ((ssize_t) argc-1))
     ThrowConvertException(OptionError,"MissingAnImageFilename",argv[argc-1]);
   FinalizeImageSettings(image_info,image,MagickTrue);
   if (image == (Image *) NULL)
@@ -3380,7 +3405,7 @@ WandExport MagickBooleanType ConvertImageCommand(ImageInfo *image_info,
       text=InterpretImageProperties(image_info,image,format,exception);
       if (text == (char *) NULL)
         ThrowConvertException(ResourceLimitError,"MemoryAllocationFailed",
-          GetExceptionMessage(errno));
+          (char *) NULL);
       (void) ConcatenateString(&(*metadata),text);
       text=DestroyString(text);
     }

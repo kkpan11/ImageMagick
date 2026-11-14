@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -112,8 +112,8 @@ typedef MagickDoubleType Quantum;
 #error "MAGICKCORE_QUANTUM_DEPTH must be one of 8, 16, 32, or 64"
 #endif
 #define MagickEpsilon  1.0e-12
-#define MagickMaximumValue  1.79769313486231570E+308
-#define MagickMinimumValue   2.22507385850720140E-308
+#define MagickMaximumValue  DBL_MAX
+#define MagickMinimumValue   DBL_MIN
 #define MagickStringify(macro_or_string)  MagickStringifyArg(macro_or_string)
 #define MagickStringifyArg(contents)  #contents
 #define QuantumScale  ((double) 1.0/(double) QuantumRange)
@@ -129,25 +129,23 @@ typedef long long MagickOffsetType;
 typedef unsigned long long MagickSizeType;
 #define MagickOffsetFormat  "lld"
 #define MagickSizeFormat  "llu"
+#define MagickOffsetMax  LLONG_MAX
 #else
 typedef ssize_t MagickOffsetType;
 typedef size_t MagickSizeType;
 #define MagickOffsetFormat  "ld"
 #define MagickSizeFormat  "lu"
+#define MagickOffsetMax  SSIZE_MAX
 #endif
 #else
 typedef __int64 MagickOffsetType;
 typedef unsigned __int64 MagickSizeType;
 #define MagickOffsetFormat  "I64i"
 #define MagickSizeFormat  "I64u"
+#define MagickOffsetMax  _I64_MAX
 #endif
 
-#if defined(MAGICKCORE_HAVE_UINTPTR_T) || defined(uintptr_t)
 typedef uintptr_t MagickAddressType;
-#else
-/* Hope for the best, I guess. */
-typedef size_t MagickAddressType;
-#endif
 
 typedef MagickSizeType QuantumAny;
 

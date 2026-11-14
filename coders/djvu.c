@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -318,7 +318,7 @@ process_message(ddjvu_message_t *message)
  * DjVu advertised readiness to provide bitmap: So get it!
  * we use the RGB format!
  */
-static void
+static MagickBooleanType
 get_page_image(LoadContext *lc, ddjvu_page_t *page, int x, int y, int w, int h, ExceptionInfo *exception ) {
   ddjvu_format_t
     *format;
@@ -329,8 +329,7 @@ get_page_image(LoadContext *lc, ddjvu_page_t *page, int x, int y, int w, int h, 
   Image
     *image;
 
-  int
-    ret,
+  size_t
     stride;
 
   unsigned char
@@ -349,9 +348,9 @@ get_page_image(LoadContext *lc, ddjvu_page_t *page, int x, int y, int w, int h, 
         stride = (type == DDJVU_PAGETYPE_BITONAL)?
                 (image->columns + 7)/8 : image->columns *3;
 
-        q = (unsigned char *) AcquireQuantumMemory(image->rows,(size_t) stride);
+        q = (unsigned char *) AcquireQuantumMemory(image->rows,stride);
         if (q == (unsigned char *) NULL)
-          return;
+          return(MagickFalse);
 
         format = ddjvu_format_create(
                 (type == DDJVU_PAGETYPE_BITONAL)?DDJVU_FORMAT_LSBTOMSB : DDJVU_FORMAT_RGB24,
@@ -372,14 +371,18 @@ get_page_image(LoadContext *lc, ddjvu_page_t *page, int x, int y, int w, int h, 
         ddjvu_format_set_row_order(format, 1);
         ddjvu_format_set_y_direction(format, 1);
 
-        ret = ddjvu_page_render(page,
+        if (ddjvu_page_render(page,
                                     DDJVU_RENDER_COLOR, /* ddjvu_render_mode_t */
                                     &rect,
                                     &rect,     /* mmc: ?? */
                                     format,
                                     (size_t) stride, /* ?? */
-                                    (char*)q);
-        (void) ret;
+                                    (char*)q) == 0)
+          {
+            ddjvu_format_release(format);
+            q=(unsigned char *) RelinquishMagickMemory(q);
+            return(MagickFalse);
+          }
         ddjvu_format_release(format);
 
 
@@ -408,7 +411,7 @@ get_page_image(LoadContext *lc, ddjvu_page_t *page, int x, int y, int w, int h, 
                                                 if (bit == 8)
                                                         bit=0;
                                                 byte>>=1;
-                                          o+=GetPixelChannels(image);
+                                          o+=(ptrdiff_t) GetPixelChannels(image);
                                         }
                                 if (SyncAuthenticPixels(image,exception) == MagickFalse)
                                         break;
@@ -442,13 +445,14 @@ get_page_image(LoadContext *lc, ddjvu_page_t *page, int x, int y, int w, int h, 
                     SetPixelRed(image,ScaleCharToQuantum(*s++),r);
                     SetPixelGreen(image,ScaleCharToQuantum(*s++),r);
                     SetPixelBlue(image,ScaleCharToQuantum(*s++),r);
-                    r+=GetPixelChannels(image);
+                    r+=(ptrdiff_t) GetPixelChannels(image);
                   }
 
                               (void) SyncAuthenticPixels(image,exception);
                         }
         }
-        q=(unsigned char *) RelinquishMagickMemory(q);
+  q=(unsigned char *) RelinquishMagickMemory(q);
+  return(MagickTrue);
 }
 
 
@@ -660,7 +664,7 @@ static Image *ReadOneDJVUImage(LoadContext* lc,const int pagenum,
                 image->depth =  8UL;    /* i only support that? */
         }
 #if DEBUG
-        printf("now filling %.20g x %.20g\n",(double) image->columns,(double)
+        printf("now filling %.17g x %.17g\n",(double) image->columns,(double)
           image->rows);
 #endif
 
@@ -673,8 +677,14 @@ static Image *ReadOneDJVUImage(LoadContext* lc,const int pagenum,
             status=SetImageExtent(image,image->columns,image->rows,exception);
             if (status == MagickFalse)
               return(DestroyImageList(image));
-            get_page_image(lc, lc->page, 0, 0, image->columns, image->rows,
+            status=get_page_image(lc,lc->page,0,0,image->columns,image->rows,
               exception);
+            if (status == MagickFalse)
+              {
+                ddjvu_page_release(lc->page);
+                lc->page = NULL;
+                ThrowReaderException(CorruptImageError,"CorruptImage");
+              }
           }
 #else
         int i;
@@ -690,7 +700,7 @@ static Image *ReadOneDJVUImage(LoadContext* lc,const int pagenum,
 
 
 #if DEBUG
-        printf("END: finished filling %.20g x %.20g\n",(double) image->columns,
+        printf("END: finished filling %.17g x %.17g\n",(double) image->columns,
           (double) image->rows);
 #endif
 
@@ -862,11 +872,17 @@ static Image *ReadDJVUImage(const ImageInfo *image_info,
     i=(ssize_t) image_info->scene;
   for ( ; i < (ssize_t) lc->pages; i++)
   {
+    Image
+      *clone_list;
+
     image=ReadOneDJVUImage(lc,i,image_info,exception);
     if (image == (Image *) NULL)
       break;
     image->scene=(size_t) i;
-    AppendImageToList(&images,CloneImageList(image,exception));
+    clone_list=CloneImageList(image,exception);
+    if (clone_list == (Image *) NULL)
+      break;
+    AppendImageToList(&images,clone_list);
     images->extent=GetBlobSize(image);
     if (image_info->number_scenes != 0)
       if (image->scene >= (image_info->scene+image_info->number_scenes-1))

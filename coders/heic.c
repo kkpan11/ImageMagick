@@ -22,13 +22,13 @@
 %                                                                             %
 %                      Copyright 2017-2018 YANDEX LLC.                        %
 %                                                                             %
-%  Copyright @ 2018 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -48,6 +48,7 @@
 #include "MagickCore/artifact.h"
 #include "MagickCore/blob.h"
 #include "MagickCore/blob-private.h"
+#include "MagickCore/channel.h"
 #include "MagickCore/client.h"
 #include "MagickCore/colorspace-private.h"
 #include "MagickCore/property.h"
@@ -75,18 +76,19 @@
 #include "MagickCore/string-private.h"
 #include "MagickCore/module.h"
 #include "MagickCore/utility.h"
-#if defined(MAGICKCORE_HEIC_DELEGATE)
-#if defined(MAGICKCORE_WINDOWS_SUPPORT) && !defined(__MINGW32__)
-#include <heif.h>
-#else
-#include <libheif/heif.h>
-#endif
-
 #define HEIC_COMPUTE_NUMERIC_VERSION(major,minor,patch) \
-  ((major<<24) | (minor<<16) | (patch<<8) | 0)
-
+  (((major) << 24) | ((minor) << 16) | ((patch) << 8) | 0)
+#if defined(MAGICKCORE_HEIC_DELEGATE)
+#include <libheif/heif.h>
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,17,0)
+#include <libheif/heif_properties.h>
 #endif
-
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,20,0)
+#include <libheif/heif_sequences.h>
+#endif
+#endif
+
+
 #if defined(MAGICKCORE_HEIC_DELEGATE)
 /*
   Forward declarations.
@@ -121,6 +123,67 @@ static MagickBooleanType
 %    o exception: return any errors or warnings in this structure.
 %
 */
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,19,0)
+static inline void HEICSetUint32SecurityLimit(const ImageInfo *image_info,
+  const char *name,uint32_t *value)
+{
+  const char
+    *option;
+
+  option=GetImageOption(image_info,name);
+  if (option == (const char*) NULL)
+    return;
+  *value=strtoul(option,(char **) NULL,10);
+}
+
+static inline void HEICSetUint64SecurityLimit(const ImageInfo *image_info,
+  const char *name,uint64_t *value)
+{
+  const char
+    *option;
+
+  option=GetImageOption(image_info,name);
+  if (option == (const char*) NULL)
+    return;
+  *value=strtoull(option,(char **) NULL,10);
+}
+
+static inline void HEICSecurityLimits(const ImageInfo *image_info,
+  struct heif_context *heif_context)
+{
+  int
+    height_limit,
+    max_profile_size,
+    width_limit;
+
+  struct heif_security_limits
+    *security_limits;
+
+  security_limits=heif_context_get_security_limits(heif_context);
+  width_limit=(int) MagickMin(GetMagickResourceLimit(HeightResource),INT_MAX);
+  height_limit=(int) MagickMin(GetMagickResourceLimit(WidthResource),INT_MAX);
+  if (width_limit != INT_MAX || height_limit != INT_MAX)
+    security_limits->max_image_size_pixels=(uint64_t) width_limit*height_limit;
+  max_profile_size=(int) MagickMin(GetMaxProfileSize(),INT_MAX);
+  if (max_profile_size != INT_MAX)
+    security_limits->max_color_profile_size=max_profile_size;
+  security_limits->max_memory_block_size=(uint64_t) GetMaxMemoryRequest();
+  HEICSetUint64SecurityLimit(image_info,"heic:max-number-of-tiles",
+    &security_limits->max_number_of_tiles);
+  HEICSetUint32SecurityLimit(image_info,"heic:max-bayer-pattern-pixels",
+    &security_limits->max_bayer_pattern_pixels);
+  HEICSetUint32SecurityLimit(image_info,"heic:max-items",
+    &security_limits->max_items);
+  HEICSetUint32SecurityLimit(image_info,"heic:max-components",
+    &security_limits->max_components);
+  HEICSetUint32SecurityLimit(image_info,"heic:max-iloc-extents-per-item",
+    &security_limits->max_iloc_extents_per_item);
+  HEICSetUint32SecurityLimit(image_info,"heic:max-size-entity-group",
+    &security_limits->max_size_entity_group);
+  HEICSetUint32SecurityLimit(image_info,"heic:max-children-per-box",
+    &security_limits->max_children_per_box);
+}
+#endif
 
 static inline MagickBooleanType HEICSkipImage(const ImageInfo *image_info,
   Image *image)
@@ -145,6 +208,61 @@ static inline MagickBooleanType IsHEIFSuccess(Image *image,
     error->message,"(%d.%d) `%s'",error->code,error->subcode,image->filename);
   return(MagickFalse);
 }
+
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,17,0)
+static void ReadHEICCICPProfile(Image *image,
+  struct heif_image_handle *image_handle,ExceptionInfo *exception)
+{
+  char
+    property[MagickPathExtent];
+
+  struct heif_color_profile_nclx
+    *nclx_profile;
+
+  struct heif_error
+    error;
+
+  nclx_profile=(struct heif_color_profile_nclx *) NULL;
+  error=heif_image_handle_get_nclx_color_profile(image_handle,&nclx_profile);
+  if (error.code == heif_error_Color_profile_does_not_exist)
+    return;
+  if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
+    {
+      if (nclx_profile != (struct heif_color_profile_nclx *) NULL)
+        heif_nclx_color_profile_free(nclx_profile);
+      return;
+    }
+  if (nclx_profile == (struct heif_color_profile_nclx *) NULL)
+    return;
+  (void) FormatLocaleString(property,MagickPathExtent,"%u/%u/%u/%u",
+    (unsigned int) nclx_profile->color_primaries,(unsigned int)
+    nclx_profile->transfer_characteristics,(unsigned int)
+    nclx_profile->matrix_coefficients,(unsigned int)
+    nclx_profile->full_range_flag);
+  (void) SetImageProperty(image,"heic:cicp",property,exception);
+  heif_nclx_color_profile_free(nclx_profile);
+}
+#endif
+
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,20,0)
+static void ReadHEICContentLightLevel(Image *image,
+  struct heif_image_handle *image_handle,ExceptionInfo *exception)
+{
+  char
+    property[MagickPathExtent];
+
+  struct heif_content_light_level
+    content_light_level;
+
+  if (heif_image_handle_get_content_light_level(image_handle,
+      &content_light_level) == 0)
+    return;
+  (void) FormatLocaleString(property,MagickPathExtent,"%u,%u",(unsigned int)
+    content_light_level.max_content_light_level,(unsigned int)
+    content_light_level.max_pic_average_light_level);
+  (void) SetImageProperty(image,"heic:clli",property,exception);
+}
+#endif
 
 static MagickBooleanType ReadHEICColorProfile(Image *image,
   struct heif_image_handle *image_handle,ExceptionInfo *exception)
@@ -215,6 +333,8 @@ static MagickBooleanType ReadHEICExifProfile(Image *image,
     ThrowBinaryException(CorruptImageError,"InsufficientImageDataInFile",
       image->filename);
   exif_profile=AcquireProfileStringInfo("exif",length,exception);
+  if (exif_profile == (StringInfo*) NULL)
+    return(MagickTrue);
   error=heif_image_handle_get_metadata(image_handle,id,
     GetStringInfoDatum(exif_profile));
   if ((IsHEIFSuccess(image,&error,exception) != MagickFalse) && (length > 4))
@@ -310,7 +430,8 @@ static MagickBooleanType ReadHEICXMPProfile(Image *image,
 }
 
 static MagickBooleanType ReadHEICImageHandle(const ImageInfo *image_info,
-  Image *image,struct heif_image_handle *image_handle,ExceptionInfo *exception)
+  Image *image,struct heif_context *heif_context,
+  struct heif_image_handle *image_handle,ExceptionInfo *exception)
 {
   const uint8_t
     *p,
@@ -358,8 +479,83 @@ static MagickBooleanType ReadHEICImageHandle(const ImageInfo *image_info,
     "heic:preserve-orientation"));
   if (preserve_orientation == MagickFalse)
     (void) SetImageProperty(image,"exif:Orientation","1",exception);
+  else
+    {
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,17,0)
+      enum heif_item_property_type
+        type = heif_item_property_type_invalid;
+
+      heif_item_id
+        item_id;
+
+      heif_property_id
+        transforms[1];
+
+      int
+        count;
+
+      item_id=heif_image_handle_get_item_id(image_handle);
+      count=heif_item_get_transformation_properties(heif_context,item_id,
+        transforms,1);
+      if (count == 1)
+        type=heif_item_get_property_type(heif_context,item_id,transforms[0]);
+      if (count == 1 && ((type == heif_item_property_type_transform_mirror) ||
+          (type == heif_item_property_type_transform_rotation)))
+        {
+          enum heif_transform_mirror_direction
+            mirror;
+
+          int
+            rotation_ccw;
+
+          mirror=heif_item_get_property_transform_mirror(heif_context,item_id,
+            transforms[0]);
+          rotation_ccw=heif_item_get_property_transform_rotation_ccw(
+            heif_context,item_id,transforms[0]);
+          switch(mirror)
+          {
+            case heif_transform_mirror_direction_horizontal:
+            {
+              if (rotation_ccw == 0)
+                image->orientation=TopRightOrientation;
+              else if (rotation_ccw == 270)
+                image->orientation=LeftTopOrientation;
+              break;
+            }
+            case heif_transform_mirror_direction_vertical:
+            {
+              if (rotation_ccw == 0)
+                image->orientation=BottomLeftOrientation;
+              else if (rotation_ccw == 270)
+                image->orientation=RightBottomOrientation;
+              break;
+            }
+            case heif_transform_mirror_direction_invalid:
+            {
+              if (rotation_ccw == 0)
+                image->orientation=TopLeftOrientation;
+              else if (rotation_ccw == 90)
+                image->orientation=LeftBottomOrientation;
+              else if (rotation_ccw == 180)
+                image->orientation=BottomRightOrientation;
+              else if (rotation_ccw == 270)
+                image->orientation=RightTopOrientation;
+              break;
+            }
+          }
+        }
+#endif
+      image->columns=(size_t) heif_image_handle_get_ispe_width(image_handle);
+      image->rows=(size_t) heif_image_handle_get_ispe_height(image_handle);
+    }
   if (ReadHEICColorProfile(image,image_handle,exception) == MagickFalse)
     return(MagickFalse);
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,17,0)
+  ReadHEICCICPProfile(image,image_handle,exception);
+#endif
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,20,0)
+  ReadHEICContentLightLevel(image,image_handle,exception);
+#endif
   if (ReadHEICExifProfile(image,image_handle,exception) == MagickFalse)
     return(MagickFalse);
   if (ReadHEICXMPProfile(image,image_handle,exception) == MagickFalse)
@@ -457,7 +653,7 @@ static MagickBooleanType ReadHEICImageHandle(const ImageInfo *image_info,
         SetPixelBlue(image,ScaleCharToQuantum((unsigned char) *(p++)),q);
         if (image->alpha_trait != UndefinedPixelTrait)
           SetPixelAlpha(image,ScaleCharToQuantum((unsigned char) *(p++)),q);
-        q+=GetPixelChannels(image);
+        q+=(ptrdiff_t) GetPixelChannels(image);
       }
       if (SyncAuthenticPixels(image,exception) == MagickFalse)
         break;
@@ -481,18 +677,18 @@ static MagickBooleanType ReadHEICImageHandle(const ImageInfo *image_info,
       for (x=0; x < (ssize_t) image->columns; x++)
       {
         unsigned short pixel = (((unsigned short) *(p+1) << 8) |
-          (*(p+0))) << shift; p+=2;
+          (*(p+0))) << shift; p+=(ptrdiff_t) 2;
         SetPixelRed(image,ScaleShortToQuantum(pixel),q);
-        pixel=(((unsigned short) *(p+1) << 8) | (*(p+0))) << shift; p+=2;
+        pixel=(((unsigned short) *(p+1) << 8) | (*(p+0))) << shift; p+=(ptrdiff_t) 2;
         SetPixelGreen(image,ScaleShortToQuantum(pixel),q);
-        pixel=(((unsigned short) *(p+1) << 8) | (*(p+0))) << shift; p+=2;
+        pixel=(((unsigned short) *(p+1) << 8) | (*(p+0))) << shift; p+=(ptrdiff_t) 2;
         SetPixelBlue(image,ScaleShortToQuantum(pixel),q);
         if (image->alpha_trait != UndefinedPixelTrait)
           {
-            pixel=(((unsigned short) *(p+1) << 8) | (*(p+0))) << shift; p+=2;
+            pixel=(((unsigned short) *(p+1) << 8) | (*(p+0))) << shift; p+=(ptrdiff_t) 2;
             SetPixelAlpha(image,ScaleShortToQuantum(pixel),q);
           }
-        q+=GetPixelChannels(image);
+        q+=(ptrdiff_t) GetPixelChannels(image);
       }
       if (SyncAuthenticPixels(image,exception) == MagickFalse)
         break;
@@ -501,8 +697,370 @@ static MagickBooleanType ReadHEICImageHandle(const ImageInfo *image_info,
   return(MagickTrue);
 }
 
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,20,0)
+static MagickBooleanType IsHEICPrimaryImagePreferred(const ImageInfo *image_info,
+  struct heif_context *heif_context,const unsigned char *magic,const size_t length)
+{
+  heif_item_id
+    primary_image_id;
+
+  struct heif_error
+    error;
+
+  heif_brand2
+    major_brand;
+
+  if (IsStringTrue(GetImageOption(image_info,"heic:primary-image")) != MagickFalse)
+    return(MagickTrue);
+  major_brand=heif_read_main_brand(magic,(int) length);
+  if ((major_brand != heif_brand2_avif) &&
+      (major_brand != heif_brand2_heic) &&
+      (major_brand != heif_brand2_heix) &&
+      (major_brand != heif_brand2_mif1))
+    return(MagickFalse);
+  error=heif_context_get_primary_image_ID(heif_context,&primary_image_id);
+  return(error.code == heif_error_Ok ? MagickTrue : MagickFalse);
+}
+
+static MagickBooleanType GetHEICSequenceTrack(Image *image,
+  struct heif_context *heif_context,heif_track **sequence_track,
+  ExceptionInfo *exception)
+{
+  int
+    i,
+    number_tracks;
+
+  uint32_t
+    *track_ids;
+
+  *sequence_track=(heif_track *) NULL;
+  number_tracks=heif_context_number_of_sequence_tracks(heif_context);
+  if (AcquireMagickResource(ListLengthResource,(MagickSizeType) number_tracks) == MagickFalse)
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),
+        ResourceLimitError,"ListLengthExceedsLimit","`%s'",image->filename);
+      return(MagickFalse);
+    }
+  track_ids=(uint32_t *) AcquireQuantumMemory((size_t) number_tracks,sizeof(*track_ids));
+  if (track_ids == (uint32_t *) NULL)
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),
+        ResourceLimitError,"MemoryAllocationFailed","`%s'",image->filename);
+      return(MagickFalse);
+    }
+  heif_context_get_track_ids(heif_context,track_ids);
+  for (i=0; i < number_tracks; i++)
+  {
+    heif_track
+      *track;
+
+    track=heif_context_get_track(heif_context,track_ids[i]);
+    if (track == (heif_track *) NULL)
+      {
+        track_ids=(uint32_t *) RelinquishMagickMemory(track_ids);
+        (void) ThrowMagickException(exception,GetMagickModule(),
+          CorruptImageError,"ImageTypeNotSupported","`%s'",image->filename);
+        return(MagickFalse);
+      }
+    if (heif_track_get_track_handler_type(track) == heif_track_type_image_sequence)
+      {
+        *sequence_track=track;
+        break;
+      }
+    heif_track_release(track);
+  }
+  track_ids=(uint32_t *) RelinquishMagickMemory(track_ids);
+  return(MagickTrue);
+}
+
+static MagickBooleanType ReadHEICSequenceFrames(const ImageInfo *image_info,
+  Image *image,heif_track *track,ExceptionInfo *exception)
+{
+  const uint8_t
+    *pixels[4];
+
+  const enum heif_channel
+    channels[4] = { heif_channel_R, heif_channel_G, heif_channel_B,
+      heif_channel_Alpha };
+
+  int
+    bits_per_pixel[4],
+    has_alpha = 0,
+    stride[4];
+
+  MagickBooleanType
+    status;
+
+  size_t
+    c,
+    number_channels,
+    scene;
+
+  struct heif_decoding_options
+    *decode_options;
+
+  struct heif_error
+    error;
+
+  struct heif_image
+    *heif_image;
+
+  uint16_t
+    track_width,
+    track_height;
+
+  uint32_t
+    timescale;
+
+  error=heif_track_get_image_resolution(track,&track_width,&track_height);
+  if (error.code != heif_error_Ok)
+    {
+      heif_track_release(track);
+      return(MagickFalse);
+    }
+  timescale=heif_track_get_timescale(track);
+  if (timescale == 0)
+    timescale=1;
+  decode_options=heif_decoding_options_alloc();
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,21,0)
+  decode_options->ignore_sequence_editlist=1;
+  /*
+    Detect alpha from the track and set up chroma format.
+  */
+  has_alpha=heif_track_has_alpha_channel(track);
+  image->alpha_trait=UndefinedPixelTrait;
+  if (has_alpha != 0)
+    image->alpha_trait=BlendPixelTrait;
+#endif
+  scene=0;
+  status=MagickTrue;
+  for ( ; ; )
+  {
+    ssize_t
+      y;
+
+    uint32_t
+      duration;
+
+    if (AcquireMagickResource(ListLengthResource,scene+1) == MagickFalse)
+      {
+        (void) ThrowMagickException(exception,GetMagickModule(),
+          ResourceLimitError,"ListLengthExceedsLimit","`%s'",
+          image_info->filename);
+        status=MagickFalse;
+        break;
+      }
+    heif_image=(struct heif_image *) NULL;
+    
+    error=heif_track_decode_next_image(track,&heif_image,heif_colorspace_RGB,
+      heif_chroma_444,decode_options);
+    if (error.code == heif_error_End_of_sequence)
+      break;
+    if (error.code != heif_error_Ok)
+      {
+        (void) ThrowMagickException(exception,GetMagickModule(),
+          CorruptImageError,error.message,"(%d.%d) `%s'",error.code,
+          error.subcode,image->filename);
+        status=MagickFalse;
+        break;
+      }
+
+    /*
+      Allocate next image for frames beyond the first.
+    */
+    if (scene > 0)
+      {
+        AcquireNextImage(image_info,image,exception);
+        if (GetNextImageInList(image) == (Image *) NULL)
+          {
+            heif_image_release(heif_image);
+            status=MagickFalse;
+            break;
+          }
+        image=SyncNextImageInList(image);
+      }
+    image->scene=scene;
+    {
+      size_t
+        profile_size;
+
+      /*
+        Extract raw color profile from each decoded frame if available.
+      */
+      profile_size=heif_image_get_raw_color_profile_size(heif_image);
+      if (profile_size > 0)
+        {
+          unsigned char
+            *color_profile;
+
+          color_profile=(unsigned char *) AcquireQuantumMemory(1,profile_size);
+          if (color_profile != (unsigned char *) NULL)
+            {
+              struct heif_error
+                profile_error;
+
+              profile_error=heif_image_get_raw_color_profile(heif_image,
+                color_profile);
+              if (IsHEIFSuccess(image,&profile_error,exception) != MagickFalse)
+                {
+                  StringInfo
+                    *profile;
+
+                  profile=BlobToProfileStringInfo("icc",color_profile,
+                    profile_size,exception);
+                  (void) SetImageProfilePrivate(image,profile,exception);
+                }
+              color_profile=(unsigned char *) RelinquishMagickMemory(
+                color_profile);
+            }
+        }
+    }
+
+    /*
+      Set frame timing: convert track timescale ticks to ticks_per_second.
+    */
+    duration=heif_image_get_duration(heif_image);
+    image->ticks_per_second=(ssize_t) timescale;
+    image->delay=(size_t) duration;
+    image->iterations=0;
+    /*
+      Set image dimensions from the decoded frame.
+    */
+    image->columns=(size_t) heif_image_get_width(heif_image,heif_channel_R);
+    image->rows=(size_t) heif_image_get_height(heif_image,heif_channel_R);
+    has_alpha=heif_image_has_channel(heif_image,heif_channel_Alpha);
+    number_channels=has_alpha != 0 ? 4 : 3;
+    for (c=0; c < number_channels; c++)
+    {
+      int plane_width = heif_image_get_width(heif_image,channels[c]);
+      int plane_height = heif_image_get_height(heif_image,channels[c]);
+      if ((plane_width <= 0) || (plane_height <= 0) ||
+          ((size_t) plane_width < image->columns) ||
+          ((size_t) plane_height < image->rows))
+        break;
+      bits_per_pixel[c]=heif_image_get_bits_per_pixel_range(heif_image,
+        channels[c]);
+      if ((bits_per_pixel[c] <= 0) || (bits_per_pixel[c] > 16))
+        break;
+     }
+    if (c != number_channels)
+      {
+        (void) ThrowMagickException(exception,GetMagickModule(),
+          CorruptImageError,"ImproperImageHeader","`%s'",image->filename);
+        heif_image_release(heif_image);
+        status=MagickFalse;
+        break;
+      }
+    image->depth=(size_t) bits_per_pixel[0];
+    image->alpha_trait=UndefinedPixelTrait;
+    if (has_alpha != 0)
+      {
+        image->alpha_trait=BlendPixelTrait;
+        image->dispose=BackgroundDispose;
+      }
+    if ((image_info->ping != MagickFalse) || 
+        (HEICSkipImage(image_info,image) != MagickFalse))
+      {
+        heif_image_release(heif_image);
+        scene++;
+        if (image_info->number_scenes != 0)
+          if (image->scene >= (image_info->scene+image_info->number_scenes-1))
+            break;
+        continue;
+      }
+    status=SetImageExtent(image,image->columns,image->rows,exception);
+    if (status == MagickFalse)
+      {
+        heif_image_release(heif_image);
+        break;
+      }
+    for (c=0; c < number_channels; c++)
+      {
+        pixels[c]=heif_image_get_plane_readonly(heif_image,channels[c],
+          &stride[c]);
+        if (pixels[c] == (const uint8_t *) NULL)
+          break;
+      }
+    if (c != number_channels)
+      {
+        (void) ThrowMagickException(exception,GetMagickModule(),
+          CorruptImageError,"ImproperImageHeader","`%s'",image->filename);
+        heif_image_release(heif_image);
+        status=MagickFalse;
+        break;
+      }
+    for (y=0; y < (ssize_t) image->rows; y++)
+      {
+        const uint8_t
+          *p[4];
+
+        Quantum
+          *q;
+
+        ssize_t
+          x;
+
+        q=QueueAuthenticPixels(image,0,y,image->columns,1,exception);
+        if (q == (Quantum *) NULL)
+          {
+            status=MagickFalse;
+            break;
+          }
+        for (c=0; c < number_channels; c++)
+          p[c]=pixels[c]+y*stride[c];
+        for (x=0; x < (ssize_t) image->columns; x++)
+        {
+          Quantum
+            values[4];
+
+          for (c=0; c < number_channels; c++)
+            {
+              if (bits_per_pixel[c] <= 8)
+                values[c]=ScaleCharToQuantum(*p[c]++);
+              else
+                {
+                  uint16_t
+                    pixel;
+
+                  /*
+                    Planar samples use native byte order.
+                  */
+                  (void) memcpy(&pixel,p[c],sizeof(pixel));
+                  p[c]+=(ptrdiff_t) sizeof(pixel);
+                  values[c]=ScaleShortToQuantum((unsigned short)
+                    (pixel << (16-bits_per_pixel[c])));
+                }
+            }
+          SetPixelRed(image,values[0],q);
+          SetPixelGreen(image,values[1],q);
+          SetPixelBlue(image,values[2],q);
+          if (has_alpha != 0)
+            SetPixelAlpha(image,values[3],q);
+          q+=(ptrdiff_t) GetPixelChannels(image);
+        }
+        if (SyncAuthenticPixels(image,exception) == MagickFalse)
+          {
+            status=MagickFalse;
+            break;
+          }
+      }
+    heif_image_release(heif_image);
+    if (status == MagickFalse)
+      break;
+    scene++;
+    if (image_info->number_scenes != 0)
+      if (image->scene >= (image_info->scene+image_info->number_scenes-1))
+        break;
+  }
+  heif_decoding_options_free(decode_options);
+  heif_track_release(track);
+  return(status);
+}
+#endif
+
 static void ReadHEICDepthImage(const ImageInfo *image_info,Image *image,
-  struct heif_image_handle *image_handle,ExceptionInfo *exception)
+  struct heif_context *heif_context,struct heif_image_handle *image_handle,
+  ExceptionInfo *exception)
 {
   const char
     *option;
@@ -539,27 +1097,21 @@ static void ReadHEICDepthImage(const ImageInfo *image_info,Image *image,
   if (GetNextImageInList(image) != (Image *) NULL)
     {
       image=SyncNextImageInList(image);
-      (void) ReadHEICImageHandle(image_info,image,depth_handle,exception);
+      (void) ReadHEICImageHandle(image_info,image,heif_context,depth_handle,exception);
     }
   heif_image_handle_release(depth_handle);
 }
 
-static Image *ReadHEICImage(const ImageInfo *image_info,
-  ExceptionInfo *exception)
+static Image *ReadHEICImage(const ImageInfo *image_info,ExceptionInfo *exception)
 {
-  enum heif_filetype_result
-    filetype_check;
-
   heif_item_id
     primary_image_id;
 
   Image
     *image;
 
-  int
-    max_size;
-
   MagickBooleanType
+    primary_image,
     status;
 
   ssize_t
@@ -575,7 +1127,7 @@ static Image *ReadHEICImage(const ImageInfo *image_info,
     *image_handle;
 
   unsigned char
-    magic[12];
+    magic[128];
 
   /*
     Open image file.
@@ -593,9 +1145,13 @@ static Image *ReadHEICImage(const ImageInfo *image_info,
     return(DestroyImageList(image));
   if (ReadBlob(image,sizeof(magic),magic) != sizeof(magic))
     ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
-  filetype_check=heif_check_filetype(magic,sizeof(magic));
-  if (filetype_check == heif_filetype_no)
-    ThrowReaderException(CoderError,"ImageTypeNotSupported");
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,18,0)
+  error=heif_has_compatible_filetype(magic,sizeof(magic));
+  if (error.code != heif_error_Ok)
+#else
+  if (heif_check_filetype(magic,sizeof(magic)) == heif_filetype_no)
+#endif
+    ThrowReaderException(ImageError,"ImageTypeNotSupported");
   (void) CloseBlob(image);
 #if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,11,0)
   if (heif_has_compatible_brand(magic,sizeof(magic), "avif") == 1)
@@ -604,13 +1160,13 @@ static Image *ReadHEICImage(const ImageInfo *image_info,
   /*
     Decode HEIF image.
   */
+  primary_image=IsStringTrue(GetImageOption(image_info,"heic:primary-image"));
   heif_context=heif_context_alloc();
   if (heif_context == (struct heif_context *) NULL)
     ThrowReaderException(ResourceLimitError,"MemoryAllocationFailed");
-  max_size=(int) MagickMin(MagickMin(GetMagickResourceLimit(WidthResource),
-    GetMagickResourceLimit(HeightResource)),INT_MAX);
-  if (max_size != INT_MAX)
-    heif_context_set_maximum_image_size_limit(heif_context,max_size);
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,19,0)
+  HEICSecurityLimits(image_info,heif_context);
+#endif
   error=heif_context_read_from_file(heif_context,image->filename,
     (const struct heif_reading_options *) NULL);
   if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
@@ -618,6 +1174,31 @@ static Image *ReadHEICImage(const ImageInfo *image_info,
       heif_context_free(heif_context);
       return(DestroyImageList(image));
     }
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,20,0)
+  /*
+    Prefer an available primary image for still-image major brands.
+  */
+  if ((heif_context_has_sequence(heif_context) != 0) &&
+     (IsHEICPrimaryImagePreferred(image_info,heif_context,magic,sizeof(magic)) == MagickFalse))
+    {
+      heif_track
+        *track;
+
+      if (GetHEICSequenceTrack(image,heif_context,&track,exception) == MagickFalse)
+        {
+          heif_context_free(heif_context);
+          return(DestroyImageList(image));
+        }
+      if (track != (heif_track *) NULL)
+        {
+          status=ReadHEICSequenceFrames(image_info,image,track,exception);
+          heif_context_free(heif_context);
+          if (status == MagickFalse)
+            return(DestroyImageList(image));
+          return(GetFirstImageInList(image));
+        }
+    }
+#endif
   error=heif_context_get_primary_image_ID(heif_context,&primary_image_id);
   if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
     {
@@ -631,10 +1212,11 @@ static Image *ReadHEICImage(const ImageInfo *image_info,
       heif_context_free(heif_context);
       return(DestroyImageList(image));
     }
-  status=ReadHEICImageHandle(image_info,image,image_handle,exception);
+  status=ReadHEICImageHandle(image_info,image,heif_context,image_handle,
+    exception);
   heif_image_handle_release(image_handle);
   count=(ssize_t) heif_context_get_number_of_top_level_images(heif_context);
-  if ((status != MagickFalse) && (count > 1))
+  if ((status != MagickFalse) && (primary_image == MagickFalse) && (count > 1))
     {
       heif_item_id
         *ids;
@@ -670,7 +1252,8 @@ static Image *ReadHEICImage(const ImageInfo *image_info,
             status=MagickFalse;
             break;
           }
-        status=ReadHEICImageHandle(image_info,image,image_handle,exception);
+        status=ReadHEICImageHandle(image_info,image,heif_context,image_handle,
+          exception);
         heif_image_handle_release(image_handle);
         if (status == MagickFalse)
           break;
@@ -687,7 +1270,8 @@ static Image *ReadHEICImage(const ImageInfo *image_info,
       heif_context_free(heif_context);
       return(DestroyImageList(image));
     }
-  ReadHEICDepthImage(image_info,image,image_handle,exception);
+  if (primary_image == MagickFalse)
+    ReadHEICDepthImage(image_info,image,heif_context,image_handle,exception);
   heif_image_handle_release(image_handle);
   heif_context_free(heif_context);
   if (status == MagickFalse)
@@ -732,6 +1316,9 @@ static MagickBooleanType IsHEIC(const unsigned char *magick,const size_t length)
   type=heif_check_filetype(magick,(int) length);
   if (type == heif_filetype_yes_supported)
     return(MagickTrue);
+#else
+  magick_unreferenced(magick);
+  magick_unreferenced(length);
 #endif
   return(MagickFalse);
 }
@@ -796,7 +1383,21 @@ ModuleExport size_t RegisterHEICImage(void)
   entry->flags|=CoderDecoderSeekableStreamFlag;
   entry->flags^=CoderBlobSupportFlag;
   (void) RegisterMagickInfo(entry);
-#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,7,0)
+  entry=AcquireMagickInfo("HEIC","AVCI","AVC Image File Format");
+#if defined(MAGICKCORE_HEIC_DELEGATE)
+  if (heif_have_decoder_for_format(heif_compression_AVC))
+    entry->decoder=(DecodeImageHandler *) ReadHEICImage;
+  if (heif_have_encoder_for_format(heif_compression_AVC))
+    entry->encoder=(EncodeImageHandler *) WriteHEICImage;
+#endif
+  entry->magick=(IsImageFormatHandler *) IsHEIC;
+  entry->mime_type=ConstantString("image/avci");
+#if defined(LIBHEIF_VERSION)
+  entry->version=ConstantString(LIBHEIF_VERSION);
+#endif
+  entry->flags|=CoderDecoderSeekableStreamFlag;
+  entry->flags^=CoderBlobSupportFlag;
+  (void) RegisterMagickInfo(entry);
   entry=AcquireMagickInfo("HEIC","AVIF","AV1 Image File Format");
 #if defined(MAGICKCORE_HEIC_DELEGATE)
   if (heif_have_decoder_for_format(heif_compression_AV1))
@@ -812,7 +1413,6 @@ ModuleExport size_t RegisterHEICImage(void)
   entry->flags|=CoderDecoderSeekableStreamFlag;
   entry->flags^=CoderBlobSupportFlag;
   (void) RegisterMagickInfo(entry);
-#endif
   return(MagickImageCoderSignature);
 }
 
@@ -837,9 +1437,7 @@ ModuleExport size_t RegisterHEICImage(void)
 */
 ModuleExport void UnregisterHEICImage(void)
 {
-#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,7,0)
   (void) UnregisterMagickInfo("AVIF");
-#endif
   (void) UnregisterMagickInfo("HEIC");
   (void) UnregisterMagickInfo("HEIF");
 #if defined(MAGICKCORE_HEIC_DELEGATE)
@@ -929,13 +1527,289 @@ static void WriteProfile(struct heif_context *context,Image *image,
       }
     if (image->debug != MagickFalse)
       (void) LogMagickEvent(CoderEvent,GetMagickModule(),
-        "%s profile: %.20g bytes",name,(double) GetStringInfoLength(profile));
+        "%s profile: %.17g bytes",name,(double) GetStringInfoLength(profile));
     name=GetNextImageProfile(image);
   }
   heif_image_handle_release(image_handle);
 }
 
-static struct heif_error heif_write_func(struct heif_context *context,
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,17,0)
+static const char *GetHEICCicpOption(const ImageInfo *image_info,Image *image,
+  ExceptionInfo *exception)
+{
+  const char
+    *option;
+
+  option=GetImageOption(image_info,"heic:cicp");
+  if ((option == (const char *) NULL) &&
+      (GetImageProfile(image,"icc") == (const StringInfo *) NULL) &&
+      (IsStringFalse(GetImageOption(image_info,"heic:preserve-cicp")) ==
+       MagickFalse))
+    option=GetImageProperty(image,"heic:cicp",exception);
+  return(option);
+}
+
+static MagickBooleanType IsHEICCicpIdentityMatrix(const char *option)
+{
+  GeometryInfo
+    cicp;
+
+  MagickStatusType
+    flags;
+
+  if (option == (const char *) NULL)
+    return(MagickFalse);
+  SetGeometryInfo(&cicp);
+  flags=ParseGeometry(option,&cicp);
+  if (((flags & XiValue) != 0) && (cicp.xi == 0.0))
+    return(MagickTrue);
+  return(MagickFalse);
+}
+
+static MagickBooleanType IsHEICExplicitCicp(const ImageInfo *image_info)
+{
+  if (GetImageOption(image_info,"heic:cicp") != (const char *) NULL)
+    return(MagickTrue);
+  return(MagickFalse);
+}
+
+static MagickBooleanType IsHEICSubsampledChroma(const char *chroma)
+{
+  if (chroma == (const char *) NULL)
+    return(MagickFalse);
+  if ((LocaleCompare(chroma,"420") == 0) ||
+      (LocaleCompare(chroma,"422") == 0))
+    return(MagickTrue);
+  return(MagickFalse);
+}
+
+static MagickBooleanType HasHEICIdentityCicp(const ImageInfo *image_info,
+  Image *image,MagickBooleanType image_list,ExceptionInfo *exception)
+{
+  Image
+    *next;
+
+  for (next=image; next != (Image *) NULL; next=GetNextImageInList(next))
+    {
+      const char
+        *option;
+
+      option=GetHEICCicpOption(image_info,next,exception);
+      if (IsHEICCicpIdentityMatrix(option) != MagickFalse)
+        return(MagickTrue);
+      if (image_list == MagickFalse)
+        break;
+    }
+  return(MagickFalse);
+}
+
+static struct heif_color_profile_nclx *CreateHEICCicpProfile(Image *image,
+  const char *option,MagickBooleanType use_ycbcr_matrix,
+  ExceptionInfo *exception)
+{
+  GeometryInfo
+    cicp;
+
+  struct heif_color_profile_nclx
+    *nclx_profile;
+
+  struct heif_error
+    error;
+
+  nclx_profile=heif_nclx_color_profile_alloc();
+  if (nclx_profile == (struct heif_color_profile_nclx *) NULL)
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),
+        ResourceLimitError,"MemoryAllocationFailed","`%s'",image->filename);
+      return((struct heif_color_profile_nclx *) NULL);
+    }
+  SetGeometryInfo(&cicp);
+  cicp.rho=(double) nclx_profile->color_primaries;
+  cicp.sigma=(double) nclx_profile->transfer_characteristics;
+  cicp.xi=(double) nclx_profile->matrix_coefficients;
+  cicp.psi=(double) nclx_profile->full_range_flag;
+  (void) ParseGeometry(option,&cicp);
+  if (use_ycbcr_matrix != MagickFalse)
+    cicp.xi=(double) heif_matrix_coefficients_ITU_R_BT_601_6;
+  error=heif_nclx_color_profile_set_color_primaries(nclx_profile,
+    (uint16_t) cicp.rho);
+  if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
+    {
+      heif_nclx_color_profile_free(nclx_profile);
+      return((struct heif_color_profile_nclx *) NULL);
+    }
+  error=heif_nclx_color_profile_set_transfer_characteristics(nclx_profile,
+    (uint16_t) cicp.sigma);
+  if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
+    {
+      heif_nclx_color_profile_free(nclx_profile);
+      return((struct heif_color_profile_nclx *) NULL);
+    }
+  error=heif_nclx_color_profile_set_matrix_coefficients(nclx_profile,
+    (uint16_t) cicp.xi);
+  if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
+    {
+      heif_nclx_color_profile_free(nclx_profile);
+      return((struct heif_color_profile_nclx *) NULL);
+    }
+  nclx_profile->full_range_flag=(uint8_t) cicp.psi;
+  return(nclx_profile);
+}
+
+static MagickBooleanType SetHEICOutputCicpProfile(const ImageInfo *image_info,
+  Image *image,const char *chroma,MagickBooleanType image_list,
+  struct heif_color_profile_nclx **profile,ExceptionInfo *exception)
+{
+  Image
+    *next;
+
+  *profile=(struct heif_color_profile_nclx *) NULL;
+  if ((IsHEICSubsampledChroma(chroma) == MagickFalse) ||
+      (IsHEICExplicitCicp(image_info) != MagickFalse))
+    return(MagickTrue);
+  for (next=image; next != (Image *) NULL; next=GetNextImageInList(next))
+    {
+      const char
+        *option;
+
+      option=GetHEICCicpOption(image_info,next,exception);
+      if (IsHEICCicpIdentityMatrix(option) == MagickFalse)
+        {
+          if (image_list == MagickFalse)
+            break;
+          continue;
+        }
+      *profile=CreateHEICCicpProfile(next,option,MagickTrue,exception);
+      if (*profile == (struct heif_color_profile_nclx *) NULL)
+        return(MagickFalse);
+      return(MagickTrue);
+    }
+  return(MagickTrue);
+}
+
+static MagickBooleanType WriteHEICCicpProfile(Image *image,
+  struct heif_image *heif_image,const char *option,ExceptionInfo *exception)
+{
+  struct heif_color_profile_nclx
+    *nclx_profile;
+
+  struct heif_error
+    error;
+
+  nclx_profile=CreateHEICCicpProfile(image,option,MagickFalse,exception);
+  if (nclx_profile == (struct heif_color_profile_nclx *) NULL)
+    return(MagickFalse);
+  error=heif_image_set_nclx_color_profile(heif_image,nclx_profile);
+  heif_nclx_color_profile_free(nclx_profile);
+  return(IsHEIFSuccess(image,&error,exception));
+}
+#endif
+
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,20,0)
+static MagickBooleanType WriteHEICContentLightLevel(Image *image,
+  struct heif_image *heif_image,const char *option,ExceptionInfo *exception)
+{
+  char
+    *p,
+    *q;
+
+  struct heif_content_light_level
+    content_light_level;
+
+  unsigned long
+    max_content_light_level,
+    max_pic_average_light_level;
+
+  max_content_light_level=strtoul(option,&q,10);
+  if ((q == option) || (max_content_light_level > (unsigned long) UINT16_MAX))
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),OptionError,
+        "InvalidArgument","`heic:clli=%s' for `%s'",option,image->filename);
+      return(MagickFalse);
+    }
+  while (isspace((int) ((unsigned char) *q)) != 0)
+    q++;
+  if (*q != ',')
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),OptionError,
+        "InvalidArgument","`heic:clli=%s' for `%s'",option,image->filename);
+      return(MagickFalse);
+    }
+  q++;
+  while (isspace((int) ((unsigned char) *q)) != 0)
+    q++;
+  p=q;
+  max_pic_average_light_level=strtoul(q,&q,10);
+  if ((q == p) || (max_pic_average_light_level > (unsigned long) UINT16_MAX))
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),OptionError,
+        "InvalidArgument","`heic:clli=%s' for `%s'",option,image->filename);
+      return(MagickFalse);
+    }
+  while (isspace((int) ((unsigned char) *q)) != 0)
+    q++;
+  if (*q != '\0')
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),OptionError,
+        "InvalidArgument","`heic:clli=%s' for `%s'",option,image->filename);
+      return(MagickFalse);
+    }
+  content_light_level.max_content_light_level=(uint16_t)
+    max_content_light_level;
+  content_light_level.max_pic_average_light_level=(uint16_t)
+    max_pic_average_light_level;
+  heif_image_set_content_light_level(heif_image,&content_light_level);
+  return(MagickTrue);
+}
+#endif
+
+static MagickBooleanType WriteHEICColorProperties(const ImageInfo *image_info,
+  Image *image,struct heif_image *heif_image,ExceptionInfo *exception)
+{
+  const char
+    *option;
+
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,17,0)
+  option=GetHEICCicpOption(image_info,image,exception);
+  if (option != (const char *) NULL)
+    {
+      const char
+        *chroma;
+
+      chroma=GetImageOption(image_info,"heic:chroma");
+      if ((IsHEICExplicitCicp(image_info) != MagickFalse) &&
+          (IsHEICSubsampledChroma(chroma) != MagickFalse) &&
+          (IsHEICCicpIdentityMatrix(option) != MagickFalse))
+        {
+          (void) ThrowMagickException(exception,GetMagickModule(),
+            OptionError,"InvalidArgument","`heic:chroma=%s' conflicts with "
+            "identity matrix `heic:cicp=%s' for `%s'; use heic:chroma=444, "
+            "heic:preserve-cicp=false, or a non-identity heic:cicp value",
+            chroma,option,image->filename);
+          return(MagickFalse);
+        }
+      if (WriteHEICCicpProfile(image,heif_image,option,exception) ==
+          MagickFalse)
+        return(MagickFalse);
+    }
+#endif
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,20,0)
+  option=GetImageOption(image_info,"heic:clli");
+  if ((option == (const char *) NULL) &&
+      (IsStringFalse(GetImageOption(image_info,"heic:preserve-clli")) ==
+       MagickFalse))
+    option=GetImageProperty(image,"heic:clli",exception);
+  if (option != (const char *) NULL)
+    {
+      if (WriteHEICContentLightLevel(image,heif_image,option,exception) ==
+          MagickFalse)
+        return(MagickFalse);
+    }
+#endif
+  return(MagickTrue);
+}
+
+static struct heif_error HEICWriteBlob(struct heif_context *context,
   const void* data,size_t size,void* userdata)
 {
   Image
@@ -1015,7 +1889,7 @@ static MagickBooleanType WriteHEICImageYCbCr(Image *image,
       for (x=0; x < (ssize_t) image->columns; x++)
       {
         q_y[y*p_y+x]=ScaleQuantumToChar(GetPixelRed(image,p));
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
       }
     else
       for (x=0; x < (ssize_t) image->columns; x+=2)
@@ -1023,11 +1897,11 @@ static MagickBooleanType WriteHEICImageYCbCr(Image *image,
         q_y[y*p_y+x]=ScaleQuantumToChar(GetPixelRed(image,p));
         q_cb[y/2*p_cb+x/2]=ScaleQuantumToChar(GetPixelGreen(image,p));
         q_cr[y/2*p_cr+x/2]=ScaleQuantumToChar(GetPixelBlue(image,p));
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
         if ((x+1) < (ssize_t) image->columns)
           {
             q_y[y*p_y+x+1]=ScaleQuantumToChar(GetPixelRed(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
       }
     if (image->previous == (Image *) NULL)
@@ -1100,10 +1974,10 @@ static MagickBooleanType WriteHEICImageRGBA(Image *image,
         {
           *(q++)=ScaleQuantumToChar(GetPixelGreen(image,p));
           *(q++)=ScaleQuantumToChar(GetPixelBlue(image,p));
-          if (image->alpha_trait != UndefinedPixelTrait)
+          if ((image->alpha_trait & BlendPixelTrait) != 0)
             *(q++)=ScaleQuantumToChar(GetPixelAlpha(image,p));
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (image->previous == (Image *) NULL)
       {
@@ -1185,14 +2059,14 @@ static MagickBooleanType WriteHEICImageRRGGBBAA(Image *image,
           pixel=ScaleQuantumToShort(GetPixelBlue(image,p)) >> shift;
           *(q++)=(uint8_t) (pixel & 0xff);
           *(q++)=(uint8_t) (pixel >> 8);
-          if (image->alpha_trait != UndefinedPixelTrait)
+          if ((image->alpha_trait & BlendPixelTrait) != 0)
             {
               pixel=ScaleQuantumToShort(GetPixelAlpha(image,p)) >> shift;
               *(q++)=(uint8_t) (pixel & 0xff);
               *(q++)=(uint8_t) (pixel >> 8);
             }
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (image->previous == (Image *) NULL)
       {
@@ -1205,13 +2079,412 @@ static MagickBooleanType WriteHEICImageRRGGBBAA(Image *image,
   return(status);
 }
 
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,20,0)
+static MagickBooleanType WriteHEICSequenceImage(const ImageInfo *image_info,
+  Image *image,ExceptionInfo *exception)
+{
+  const char
+    *option;
+
+  enum heif_chroma
+    chroma;
+
+  enum heif_colorspace
+    colorspace;
+
+  heif_track
+    *track = (heif_track *) NULL;
+
+  MagickBooleanType
+    lossless,
+    status;
+
+  MagickOffsetType
+    scene;
+
+  struct heif_context
+    *heif_context;
+
+  struct heif_encoder
+    *heif_encoder = (struct heif_encoder *) NULL;
+
+  struct heif_error
+    error;
+
+  struct heif_image
+    *heif_image = (struct heif_image *) NULL;
+
+  struct heif_color_profile_nclx
+    *output_nclx_profile = (struct heif_color_profile_nclx *) NULL;
+
+  struct heif_sequence_encoding_options
+    *seq_options = (struct heif_sequence_encoding_options *) NULL;
+
+  struct heif_track_options
+    *track_options;
+
+  uint32_t
+    timescale;
+
+  /*
+    Open output image file.
+  */
+  assert(image_info != (const ImageInfo *) NULL);
+  assert(image_info->signature == MagickCoreSignature);
+  assert(image != (Image *) NULL);
+  assert(image->signature == MagickCoreSignature);
+  if (IsEventLogging() != MagickFalse)
+    (void) LogMagickEvent(TraceEvent,GetMagickModule(),"%s",image->filename);
+  status=OpenBlob(image_info,image,WriteBinaryBlobMode,exception);
+  if (status == MagickFalse)
+    return(status);
+  heif_context=heif_context_alloc();
+  if (heif_context == (struct heif_context *) NULL)
+    ThrowWriterException(ResourceLimitError,"MemoryAllocationFailed");
+  /*
+    Get encoder for AV1 (AVIF).
+  */
+  error=heif_context_get_encoder_for_format(heif_context,
+    heif_compression_AV1,&heif_encoder);
+  if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
+    {
+      heif_context_free(heif_context);
+      return(MagickFalse);
+    }
+  lossless=image_info->quality >= 100 ? MagickTrue : MagickFalse;
+  if (lossless != MagickFalse)
+    (void) heif_encoder_set_lossless(heif_encoder,1);
+  else if (image_info->quality != UndefinedCompressionQuality)
+    (void) heif_encoder_set_lossy_quality(heif_encoder,(int)
+      image_info->quality);
+  option=GetImageOption(image_info,"heic:speed");
+  if (option != (char *) NULL)
+    (void) heif_encoder_set_parameter(heif_encoder,"speed",option);
+  option=GetImageOption(image_info,"heic:chroma");
+  if ((option == (const char *) NULL) &&
+      (HasHEICIdentityCicp(image_info,image,MagickTrue,exception) !=
+       MagickFalse))
+    option="444";
+  if (option != (char *) NULL)
+    (void) heif_encoder_set_parameter(heif_encoder,"chroma",option);
+  /*
+    Determine track timescale from the first frame.
+  */
+  if (image->ticks_per_second <= 0)
+    timescale=100;
+  else
+    timescale=(uint32_t) image->ticks_per_second;
+  heif_context_set_sequence_timescale(heif_context,timescale);
+  /*
+    Create the visual sequence track.
+  */
+  if ((image->columns > 65535) || (image->rows > 65535))
+    {
+      heif_encoder_release(heif_encoder);
+      heif_context_free(heif_context);
+      ThrowWriterException(ImageError,"WidthOrHeightExceedsLimit");
+    }
+  seq_options=heif_sequence_encoding_options_alloc();
+  if (seq_options != (struct heif_sequence_encoding_options *) NULL)
+    {
+      status=SetHEICOutputCicpProfile(image_info,image,option,MagickTrue,
+        &output_nclx_profile,exception);
+      if (status == MagickFalse)
+        {
+          heif_sequence_encoding_options_release(seq_options);
+          heif_encoder_release(heif_encoder);
+          heif_context_free(heif_context);
+          return(MagickFalse);
+        }
+      if (output_nclx_profile != (struct heif_color_profile_nclx *) NULL)
+        seq_options->output_nclx_profile=output_nclx_profile;
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,21,0)
+      seq_options->save_alpha_channel=1;
+#endif
+    }
+  track_options=heif_track_options_alloc();
+  if (track_options != (struct heif_track_options *) NULL)
+    heif_track_options_set_timescale(track_options,timescale);
+  error=heif_context_add_visual_sequence_track(heif_context,
+    (uint16_t) image->columns,(uint16_t) image->rows,
+    heif_track_type_image_sequence,track_options,
+    seq_options,&track);
+  if (track_options != (struct heif_track_options *) NULL)
+    heif_track_options_release(track_options);
+  if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
+    {
+      if (seq_options != (struct heif_sequence_encoding_options *) NULL)
+        heif_sequence_encoding_options_release(seq_options);
+      if (output_nclx_profile != (struct heif_color_profile_nclx *) NULL)
+        heif_nclx_color_profile_free(output_nclx_profile);
+      heif_encoder_release(heif_encoder);
+      heif_context_free(heif_context);
+      return(MagickFalse);
+    }
+  {
+    Image
+      *frame;
+
+    MagickBooleanType
+      has_alpha;
+
+    size_t
+      depth;
+
+    depth=image->depth;
+    has_alpha=MagickFalse;
+    for (frame=image; frame != (Image *) NULL; frame=GetNextImageInList(frame))
+    {
+      if ((frame->alpha_trait & BlendPixelTrait) != 0)
+        has_alpha=MagickTrue;
+      if (frame->depth > depth)
+        depth=frame->depth;
+    }
+    for (frame=image; frame != (Image *) NULL; frame=GetNextImageInList(frame))
+    {
+      frame->depth=depth;
+      if (has_alpha != MagickFalse)
+        {
+          if ((frame->alpha_trait & BlendPixelTrait) == 0)
+            (void) SetImageAlphaChannel(frame,TransparentAlphaChannel,exception);
+        }
+    }
+  }
+  scene=0;
+  status=MagickTrue;
+  do
+  {
+    const StringInfo
+      *profile;
+
+    uint32_t
+      duration;
+
+    /*
+      Determine colorspace and chroma for this frame.
+    */
+    colorspace=heif_colorspace_YCbCr;
+    chroma=lossless != MagickFalse ? heif_chroma_444 : heif_chroma_420;
+    if ((image->alpha_trait & BlendPixelTrait) != 0)
+      {
+        if (IssRGBCompatibleColorspace(image->colorspace) == MagickFalse)
+          status=TransformImageColorspace(image,sRGBColorspace,exception);
+        colorspace=heif_colorspace_RGB;
+        chroma=heif_chroma_interleaved_RGBA;
+        if (image->depth > 8)
+          chroma=heif_chroma_interleaved_RRGGBBAA_LE;
+      }
+    else
+      if (IssRGBCompatibleColorspace(image->colorspace) != MagickFalse)
+        {
+          colorspace=heif_colorspace_RGB;
+          chroma=heif_chroma_interleaved_RGB;
+          if (image->depth > 8)
+            chroma=heif_chroma_interleaved_RRGGBB_LE;
+          if (GetPixelChannels(image) == 1)
+            {
+              colorspace=heif_colorspace_monochrome;
+              chroma=heif_chroma_monochrome;
+            }
+        }
+      else
+        if (image->colorspace != YCbCrColorspace)
+          status=TransformImageColorspace(image,YCbCrColorspace,exception);
+    if (status == MagickFalse)
+      break;
+    /*
+      Create heif_image for this frame.
+    */
+    error=heif_image_create((int) image->columns,(int) image->rows,colorspace,
+      chroma,&heif_image);
+    status=IsHEIFSuccess(image,&error,exception);
+    if (status == MagickFalse)
+      break;
+    status=WriteHEICColorProperties(image_info,image,heif_image,exception);
+    if (status == MagickFalse)
+      {
+        heif_image_release(heif_image);
+        heif_image=(struct heif_image *) NULL;
+        break;
+      }
+    profile=GetImageProfile(image,"icc");
+    if (profile != (StringInfo *) NULL)
+      (void) heif_image_set_raw_color_profile(heif_image,"prof",
+        GetStringInfoDatum(profile),GetStringInfoLength(profile));
+    /*
+      Fill heif_image pixels from ImageMagick image.
+    */
+    if (colorspace == heif_colorspace_YCbCr)
+      status=WriteHEICImageYCbCr(image,heif_image,exception);
+    else
+      if (image->depth > 8)
+        status=WriteHEICImageRRGGBBAA(image,heif_image,exception);
+      else
+        status=WriteHEICImageRGBA(image,heif_image,exception);
+    if (status == MagickFalse)
+      {
+        heif_image_release(heif_image);
+        heif_image=(struct heif_image *) NULL;
+        break;
+      }
+    /*
+      Set frame duration and encode into the track.
+    */
+    if (image->delay > (size_t) UINT32_MAX)
+      duration=UINT32_MAX;
+    else
+      duration=(uint32_t) image->delay;
+    if (duration == 0)
+      duration=timescale/10;
+    heif_image_set_duration(heif_image,duration);
+    error=heif_track_encode_sequence_image(track,heif_image,heif_encoder,
+      seq_options);
+    heif_image_release(heif_image);
+    heif_image=(struct heif_image *) NULL;
+    status=IsHEIFSuccess(image,&error,exception);
+    if (status == MagickFalse)
+      break;
+    if (GetNextImageInList(image) == (Image *) NULL)
+      break;
+    image=SyncNextImageInList(image);
+    status=SetImageProgress(image,SaveImagesTag,scene,
+      GetImageListLength(image));
+    if (status == MagickFalse)
+      break;
+    scene++;
+  } while (image_info->adjoin != MagickFalse);
+  /*
+    Finalize the sequence and write to output.
+  */
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,21,0)
+  if (status != MagickFalse)
+    {
+      struct heif_writer
+        writer;
+
+      error=heif_track_encode_end_of_sequence(track,heif_encoder);
+      if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
+        status=MagickFalse;
+      /*
+        Encode the first frame as a primary still image to generate the meta
+        box with pitm (primary item).  Firefox and some other software requires
+        this to decode animated AVIF files.
+      */
+      if (status != MagickFalse)
+        {
+          Image
+            *first_image;
+
+          struct heif_image
+            *still_image;
+
+          struct heif_encoding_options
+            *still_options = (struct heif_encoding_options *) NULL;
+
+          first_image=GetFirstImageInList(image);
+          colorspace=heif_colorspace_YCbCr;
+          chroma=lossless != MagickFalse ? heif_chroma_444 : heif_chroma_420;
+          if ((first_image->alpha_trait & BlendPixelTrait) != 0)
+            {
+              colorspace=heif_colorspace_RGB;
+              chroma=heif_chroma_interleaved_RGBA;
+              if (first_image->depth > 8)
+                chroma=heif_chroma_interleaved_RRGGBBAA_LE;
+            }
+          else
+            if (IssRGBCompatibleColorspace(first_image->colorspace) !=
+                MagickFalse)
+              {
+                colorspace=heif_colorspace_RGB;
+                chroma=heif_chroma_interleaved_RGB;
+                if (first_image->depth > 8)
+                  chroma=heif_chroma_interleaved_RRGGBB_LE;
+                if (GetPixelChannels(first_image) == 1)
+                  {
+                    colorspace=heif_colorspace_monochrome;
+                    chroma=heif_chroma_monochrome;
+                  }
+              }
+          still_image=(struct heif_image *) NULL;
+          error=heif_image_create((int) first_image->columns,
+            (int) first_image->rows,colorspace,chroma,&still_image);
+          if (IsHEIFSuccess(image,&error,exception) != MagickFalse)
+            {
+              status=WriteHEICColorProperties(image_info,first_image,
+                still_image,exception);
+              if (status != MagickFalse)
+                {
+                  if (colorspace == heif_colorspace_YCbCr)
+                    status=WriteHEICImageYCbCr(first_image,still_image,
+                      exception);
+                  else
+                    if (first_image->depth > 8)
+                      status=WriteHEICImageRRGGBBAA(first_image,still_image,
+                        exception);
+                    else
+                      status=WriteHEICImageRGBA(first_image,still_image,
+                        exception);
+                }
+              if (status != MagickFalse)
+                {
+                  if (output_nclx_profile !=
+                      (struct heif_color_profile_nclx *) NULL)
+                    {
+                      still_options=heif_encoding_options_alloc();
+                      if (still_options == (struct heif_encoding_options *)
+                          NULL)
+                        {
+                          (void) ThrowMagickException(exception,
+                            GetMagickModule(),ResourceLimitError,
+                            "MemoryAllocationFailed","`%s'",
+                            first_image->filename);
+                          status=MagickFalse;
+                        }
+                      else
+                        still_options->output_nclx_profile=
+                          output_nclx_profile;
+                    }
+                }
+              if (status != MagickFalse)
+                {
+                  error=heif_context_encode_image(heif_context,still_image,
+                    heif_encoder,still_options,
+                    (struct heif_image_handle **) NULL);
+                  status=IsHEIFSuccess(image,&error,exception);
+                }
+              if (still_options != (struct heif_encoding_options *) NULL)
+                heif_encoding_options_free(still_options);
+              heif_image_release(still_image);
+            }
+        }
+      if (status != MagickFalse)
+        {
+          writer.writer_api_version=1;
+          writer.write=HEICWriteBlob;
+          error=heif_context_write(heif_context,&writer,image);
+          status=IsHEIFSuccess(image,&error,exception);
+        }
+    }
+#endif
+  if (seq_options != (struct heif_sequence_encoding_options *) NULL)
+    heif_sequence_encoding_options_release(seq_options);
+  if (output_nclx_profile != (struct heif_color_profile_nclx *) NULL)
+    heif_nclx_color_profile_free(output_nclx_profile);
+  if (track != (heif_track *) NULL)
+    heif_track_release(track);
+  heif_encoder_release(heif_encoder);
+  heif_context_free(heif_context);
+  if (CloseBlob(image) == MagickFalse)
+    status=MagickFalse;
+  return(status);
+}
+#endif
+
 static MagickBooleanType WriteHEICImage(const ImageInfo *image_info,
   Image *image,ExceptionInfo *exception)
 {
   MagickBooleanType
-#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,7,0)
     encode_avif,
-#endif
     status;
 
   MagickOffsetType
@@ -1243,9 +2516,41 @@ static MagickBooleanType WriteHEICImage(const ImageInfo *image_info,
     return(status);
   scene=0;
   heif_context=heif_context_alloc();
-#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,7,0)
   encode_avif=(LocaleCompare(image_info->magick,"AVIF") == 0) ? MagickTrue :
     MagickFalse;
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,20,0)
+  if ((encode_avif != MagickFalse) && (image_info->adjoin != MagickFalse) &&
+      (GetNextImageInList(image) != (Image *) NULL))
+    {
+      Image
+        *coalesce_image,
+        *frame;
+
+      (void) CloseBlob(image);
+      heif_context_free(heif_context);
+
+      coalesce_image=(Image *) NULL;
+      frame=image;
+      while (frame != (Image *) NULL)
+      {
+        if ((frame->rows != image->rows) || (frame->columns != image->columns) ||
+            (frame->page.x != image->page.x) || (frame->page.y != image->page.y) ||
+            (frame->dispose != UndefinedDispose) ||
+            ((frame->alpha_trait & BlendPixelTrait) != 0))
+          {
+            coalesce_image=CoalesceImages(image,exception);
+            break;
+          }
+        frame=GetNextImageInList(frame);
+      }
+      if (coalesce_image != (Image *) NULL)
+        {
+          status=WriteHEICSequenceImage(image_info,coalesce_image,exception);
+          (void) DestroyImageList(coalesce_image);
+          return(status);
+        }
+      return(WriteHEICSequenceImage(image_info,image,exception));
+    }
 #endif
   do
   {
@@ -1267,15 +2572,18 @@ static MagickBooleanType WriteHEICImage(const ImageInfo *image_info,
     struct heif_encoding_options
       *options;
 
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,17,0)
+    struct heif_color_profile_nclx
+      *output_nclx_profile = (struct heif_color_profile_nclx *) NULL;
+#endif
+
     /*
       Get encoder for the specified format.
     */
-#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,7,0)
     if (encode_avif != MagickFalse)
       error=heif_context_get_encoder_for_format(heif_context,
         heif_compression_AV1,&heif_encoder);
     else
-#endif
       error=heif_context_get_encoder_for_format(heif_context,
         heif_compression_HEVC,&heif_encoder);
     if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
@@ -1316,9 +2624,10 @@ static MagickBooleanType WriteHEICImage(const ImageInfo *image_info,
     */
     error=heif_image_create((int) image->columns,(int) image->rows,colorspace,
       chroma,&heif_image);
-    if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
-      break;
     status=IsHEIFSuccess(image,&error,exception);
+    if (status == MagickFalse)
+      break;
+    status=WriteHEICColorProperties(image_info,image,heif_image,exception);
     if (status == MagickFalse)
       break;
     profile=GetImageProfile(image,"icc");
@@ -1354,6 +2663,12 @@ static MagickBooleanType WriteHEICImage(const ImageInfo *image_info,
           break;
       }
     option=GetImageOption(image_info,"heic:chroma");
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,17,0)
+    if ((option == (const char *) NULL) &&
+        (HasHEICIdentityCicp(image_info,image,MagickFalse,exception) !=
+         MagickFalse))
+      option="444";
+#endif
     if (option != (char *) NULL)
       {
         error=heif_encoder_set_parameter(heif_encoder,"chroma",option);
@@ -1362,6 +2677,24 @@ static MagickBooleanType WriteHEICImage(const ImageInfo *image_info,
           break;
       }
     options=heif_encoding_options_alloc();
+    if (options == (struct heif_encoding_options *) NULL)
+      {
+        (void) ThrowMagickException(exception,GetMagickModule(),
+          ResourceLimitError,"MemoryAllocationFailed","`%s'",image->filename);
+        status=MagickFalse;
+        break;
+      }
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,17,0)
+    status=SetHEICOutputCicpProfile(image_info,image,option,MagickFalse,
+      &output_nclx_profile,exception);
+    if (status == MagickFalse)
+      {
+        heif_encoding_options_free(options);
+        break;
+      }
+    if (output_nclx_profile != (struct heif_color_profile_nclx *) NULL)
+      options->output_nclx_profile=output_nclx_profile;
+#endif
 #if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,16,0)
     option=GetImageOption(image_info,"heic:chroma-downsampling");
     if (option != (char *) NULL)
@@ -1399,8 +2732,10 @@ static MagickBooleanType WriteHEICImage(const ImageInfo *image_info,
     error=heif_context_encode_image(heif_context,heif_image,heif_encoder,
       options,(struct heif_image_handle **) NULL);
     heif_encoding_options_free(options);
-    if (IsHEIFSuccess(image,&error,exception) == MagickFalse)
-      break;
+#if LIBHEIF_NUMERIC_VERSION >= HEIC_COMPUTE_NUMERIC_VERSION(1,17,0)
+    if (output_nclx_profile != (struct heif_color_profile_nclx *) NULL)
+      heif_nclx_color_profile_free(output_nclx_profile);
+#endif
     status=IsHEIFSuccess(image,&error,exception);
     if (status == MagickFalse)
       break;
@@ -1425,7 +2760,7 @@ static MagickBooleanType WriteHEICImage(const ImageInfo *image_info,
         writer;
 
       writer.writer_api_version=1;
-      writer.write=heif_write_func;
+      writer.write=HEICWriteBlob;
       error=heif_context_write(heif_context,&writer,image);
       status=IsHEIFSuccess(image,&error,exception);
     }

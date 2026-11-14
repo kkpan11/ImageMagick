@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -70,12 +70,12 @@ static inline MagickBooleanType GetColorRange(const char *color,
 
 static inline double GetFuzzyColorDistance(const Image *p,const Image *q)
 {
-  double
-    fuzz;
-
-  fuzz=(double) MagickMax(MagickMax(p->fuzz,q->fuzz),(MagickRealType)
-    MagickSQ1_2);
-  return(fuzz*fuzz);
+  /*
+    Variance-style combined fuzz.
+  */
+  if (q == (const Image *) NULL)
+    return(p->fuzz*p->fuzz);
+  return(p->fuzz*p->fuzz+q->fuzz*q->fuzz);
 }
 
 #if defined(__cplusplus) || defined(c_plusplus)

@@ -1,11 +1,11 @@
 /*
-  Copyright @ 2019 ImageMagick Studio LLC, a non-profit organization
+  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization
   dedicated to making software imaging solutions freely available.
 
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,8 +16,99 @@
 #ifndef MAGICK_GHOSTSCRIPT_BUFFER_PRIVATE_H
 #define MAGICK_GHOSTSCRIPT_BUFFER_PRIVATE_H
 
+#include "MagickCore/delegate.h"
+#include "MagickCore/delegate-private.h"
+#include "MagickCore/exception-private.h"
+#include "MagickCore/image-private.h"
 #include "MagickCore/profile-private.h"
 #include "coders/bytebuffer-private.h"
+
+static inline size_t AppendImageFilenameScene(const char *format,int value,
+  char *filename)
+{
+  char
+    *p = filename,
+    pattern[MagickPathExtent];
+
+  const char
+    *cursor = format;
+
+  assert(format != (const char *) NULL);
+  assert(filename != (char *) NULL);
+  while ((*cursor != '\0') && ((p-filename) < ((ssize_t) MagickPathExtent-1)))
+  {
+    const char
+      *specifier_start,
+      *start;
+
+    if (*cursor != '%')
+      {
+        *p++=(*cursor++);
+        continue;
+      }
+    start=cursor++;  /* Skip '%' */
+    if (*cursor == '%')
+      {
+        *p++='%';
+        cursor++;
+        continue;
+      }
+    specifier_start=cursor;
+    while (isdigit((int) ((unsigned char) *cursor)) != 0)
+      cursor++;
+    if ((*cursor == 'd') || (*cursor == 'o') || (*cursor == 'x'))
+      {
+        const char
+          *specifier_end = cursor+1;
+
+        if (IsValidFormatSpecifier(specifier_start,specifier_end) != MagickFalse)
+          {
+            char
+              format_specifier[MagickPathExtent];
+
+            size_t
+              length = (size_t) (cursor-specifier_start),
+              pattern_length;
+
+            ssize_t
+              count;
+
+            (void) snprintf(format_specifier,sizeof(format_specifier),
+              "%%%.*s%c",(int) length,specifier_start,*cursor);
+            count=FormatLocaleString(pattern,sizeof(pattern),format_specifier,
+              value);
+            pattern_length=strlen(pattern);
+            if ((count <= 0) || ((size_t) count != pattern_length))
+              return(0);
+            if ((p-filename+(ssize_t) pattern_length) >= MagickPathExtent)
+              return(0);
+            (void) CopyMagickString(p,pattern,(size_t) (MagickPathExtent-
+              (p-filename)));
+            p+=pattern_length;
+            cursor++;
+            continue;
+          }
+        else
+          {
+            /*
+              Invalid specifier — treat as literal.
+            */
+            cursor=start;
+            *p++=(*cursor++);
+            continue;
+          }
+      }
+    /*
+      Invalid or unsupported specifier — treat as literal.
+    */
+    cursor=start;
+    if ((p-filename+1) >= MagickPathExtent)
+      return(0);
+    *p++=(*cursor++);
+  }
+  *p='\0';
+  return(strlen(filename));
+}
 
 #if defined(MAGICKCORE_GS_DELEGATE) || defined(MAGICKCORE_WINDOWS_SUPPORT)
 static int MagickDLLCall GhostscriptDelegateMessage(void *handle,
@@ -54,8 +145,8 @@ static double GhostscriptVersion(const GhostInfo *ghost_info)
   if ((ghost_info->revision)(&revision,(int) sizeof(revision)) != 0)
     return(0.0);
   if (revision.revision > 1000)
-    return(revision.revision/1000.0);
-  return(revision.revision/100.0);
+    return((double) revision.revision/1000.0);
+  return((double) revision.revision/100.0);
 }
 #endif
 
@@ -201,7 +292,7 @@ static inline MagickBooleanType InvokeGhostscriptDelegate(
 #endif
 }
 
-static MagickBooleanType IsGhostscriptRendered(const char *path)
+static inline MagickBooleanType IsGhostscriptRendered(const char *path)
 {
   MagickBooleanType
     status;
@@ -240,11 +331,11 @@ static inline void ReadGhostScriptXMPProfile(MagickByteBuffer *buffer,
   ssize_t
     count;
 
-  if (*profile != (StringInfo *) NULL)
-    return;
   status=CompareMagickByteBuffer(buffer,BeginXMPPacket,strlen(BeginXMPPacket));
   if (status == MagickFalse)
     return;
+  if (*profile != (StringInfo *) NULL)
+    *profile=DestroyStringInfo(*profile);
   length=8192;
   *profile=AcquireProfileStringInfo("xmp",length,exception);
   if (*profile == (StringInfo *) NULL)
@@ -273,6 +364,59 @@ static inline void ReadGhostScriptXMPProfile(MagickByteBuffer *buffer,
       }
   }
   SetStringInfoLength(*profile,(size_t) count);
+  /* ReadPDFImage() scans the profile as a C string. */
+  GetStringInfoDatum(*profile)[count]='\0';
+}
+
+static inline char *EscapeParenthesis(const char *source,
+  const size_t max_length,ExceptionInfo *exception)
+{
+  char
+    *destination;
+
+  char
+    *q;
+
+  const char
+    *end,
+    *p;
+
+  size_t
+    length;
+
+  assert(source != (const char *) NULL);
+  length=0;
+  end=source;
+  for (p=source; *p != '\0'; p++)
+  {
+    size_t
+      count;
+
+    count=((*p == '\\') || (*p == '(') || (*p == ')')) ? 2 : 1;
+    if ((~length < count) || ((length+count) > max_length))
+      break;
+    length+=count;
+    end=p+1;
+  }
+  if (*end != '\0')
+    (void) ThrowMagickException(exception,GetMagickModule(),CoderWarning,
+      "LabelTruncated","`%g'",(double) max_length);
+  destination=(char *) NULL;
+  if (~length >= (MagickPathExtent-1))
+    destination=(char *) AcquireQuantumMemory(length+MagickPathExtent,
+      sizeof(*destination));
+  if (destination == (char *) NULL)
+    ThrowFatalException(ResourceLimitFatalError,"UnableToEscapeString");
+  *destination='\0';
+  q=destination;
+  for (p=source; p < end; p++)
+  {
+    if ((*p == '\\') || (*p == '(') || (*p == ')'))
+      *q++='\\';
+    *q++=(*p);
+  }
+  *q='\0';
+  return(destination);
 }
 
 #endif

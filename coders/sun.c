@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -313,10 +313,11 @@ static Image *ReadSUNImage(const ImageInfo *image_info,ExceptionInfo *exception)
     sun_info.type=ReadBlobMSBLong(image);
     sun_info.maptype=ReadBlobMSBLong(image);
     sun_info.maplength=ReadBlobMSBLong(image);
+    if (EOFBlob(image) != MagickFalse)
+      ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
     if (sun_info.maplength > GetBlobSize(image))
       ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
-    extent=(size_t) (sun_info.height*sun_info.width);
-    if ((sun_info.height != 0) && (sun_info.width != (extent/sun_info.height)))
+    if (HeapOverflowSanityCheckGetSize(sun_info.width,sun_info.height,&extent) != MagickFalse)
       ThrowReaderException(CorruptImageError,"ImproperImageHeader");
     if ((sun_info.type != RT_STANDARD) && (sun_info.type != RT_ENCODED) &&
         (sun_info.type != RT_FORMAT_RGB))
@@ -436,7 +437,7 @@ static Image *ReadSUNImage(const ImageInfo *image_info,ExceptionInfo *exception)
       ThrowReaderException(CorruptImageError,"ImproperImageHeader");
     if (HeapOverflowSanityCheckGetSize(sun_info.width,sun_info.depth,&bytes_per_line) != MagickFalse)
       ThrowReaderException(CorruptImageError,"ImproperImageHeader");
-    if ((sun_info.type != RT_ENCODED) && (sun_info.length > GetBlobSize(image)))
+    if (sun_info.length > GetBlobSize(image))
       ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
     sun_data=(unsigned char *) AcquireQuantumMemory(sun_info.length,
       sizeof(*sun_data));
@@ -470,6 +471,11 @@ static Image *ReadSUNImage(const ImageInfo *image_info,ExceptionInfo *exception)
         sun_data=(unsigned char *) RelinquishMagickMemory(sun_data);
         ThrowReaderException(ResourceLimitError,"ImproperImageHeader");
       }
+    if (image->rows > (MAGICK_SIZE_MAX-pixels_length))
+      {
+        sun_data=(unsigned char *) RelinquishMagickMemory(sun_data);
+        ThrowReaderException(ResourceLimitError,"ImproperImageHeader");
+      }
     sun_pixels=(unsigned char *) AcquireQuantumMemory(pixels_length+image->rows,
       sizeof(*sun_pixels));
     if (sun_pixels == (unsigned char *) NULL)
@@ -490,12 +496,6 @@ static Image *ReadSUNImage(const ImageInfo *image_info,ExceptionInfo *exception)
       }
     else
       {
-        if (EOFBlob(image) != MagickFalse)
-          {
-            ThrowFileException(exception,CorruptImageError,"UnexpectedEndOfFile",
-              image->filename);
-            break;
-          }
         if (sun_info.length > (pixels_length+image->rows))
           {
             sun_data=(unsigned char *) RelinquishMagickMemory(sun_data);
@@ -521,7 +521,7 @@ static Image *ReadSUNImage(const ImageInfo *image_info,ExceptionInfo *exception)
           {
             SetPixelIndex(image,(Quantum) ((*p) & (0x01 << bit) ? 0x00 : 0x01),
               q);
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
           p++;
         }
@@ -531,7 +531,7 @@ static Image *ReadSUNImage(const ImageInfo *image_info,ExceptionInfo *exception)
             {
               SetPixelIndex(image,(Quantum) ((*p) & (0x01 << bit) ? 0x00 :
                 0x01),q);
-              q+=GetPixelChannels(image);
+              q+=(ptrdiff_t) GetPixelChannels(image);
             }
             p++;
           }
@@ -557,9 +557,10 @@ static Image *ReadSUNImage(const ImageInfo *image_info,ExceptionInfo *exception)
               break;
             for (x=0; x < (ssize_t) image->columns; x++)
             {
-              SetPixelIndex(image,ConstrainColormapIndex(image,*p,exception),q);
+              SetPixelIndex(image,(Quantum)
+                ConstrainColormapIndex(image,*p,exception),q);
               p++;
-              q+=GetPixelChannels(image);
+              q+=(ptrdiff_t) GetPixelChannels(image);
             }
             if ((image->columns % 2) != 0)
               p++;
@@ -614,7 +615,7 @@ static Image *ReadSUNImage(const ImageInfo *image_info,ExceptionInfo *exception)
                   SetPixelBlue(image,ClampToQuantum(image->colormap[(ssize_t)
                     GetPixelBlue(image,q)].blue),q);
                 }
-              q+=GetPixelChannels(image);
+              q+=(ptrdiff_t) GetPixelChannels(image);
             }
             if (((bytes_per_pixel*image->columns) % 2) != 0)
               p++;
@@ -632,6 +633,12 @@ static Image *ReadSUNImage(const ImageInfo *image_info,ExceptionInfo *exception)
     if (image->storage_class == PseudoClass)
       (void) SyncImage(image,exception);
     sun_pixels=(unsigned char *) RelinquishMagickMemory(sun_pixels);
+    if (EOFBlob(image) != MagickFalse)
+      {
+        ThrowFileException(exception,CorruptImageError,"UnexpectedEndOfFile",
+          image->filename);
+        break;
+      }
     /*
       Proceed to next image.
     */
@@ -837,7 +844,8 @@ static MagickBooleanType WriteSUNImage(const ImageInfo *image_info,Image *image,
     sun_info.maptype=RMT_NONE;
     sun_info.maplength=0;
     number_pixels=(MagickSizeType) image->columns*image->rows;
-    if ((4*number_pixels) != (size_t) (4*number_pixels))
+    if ((HeapOverflowSanityCheck(image->columns,image->rows) != MagickFalse) ||
+        (number_pixels > (MAGICK_SSIZE_MAX/4)))
       ThrowWriterException(ResourceLimitError,"MemoryAllocationFailed");
     if (image->storage_class == DirectClass)
       {
@@ -929,7 +937,7 @@ static MagickBooleanType WriteSUNImage(const ImageInfo *image_info,Image *image,
             *q++=ScaleQuantumToChar(GetPixelRed(image,p));
             *q++=ScaleQuantumToChar(GetPixelGreen(image,p));
             *q++=ScaleQuantumToChar(GetPixelBlue(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           if (((bytes_per_pixel*image->columns) & 0x01) != 0)
             *q++='\0';  /* pad scanline */
@@ -974,7 +982,7 @@ static MagickBooleanType WriteSUNImage(const ImageInfo *image_info,Image *image,
                   bit=0;
                   byte=0;
                 }
-              p+=GetPixelChannels(image);
+              p+=(ptrdiff_t) GetPixelChannels(image);
             }
             if (bit != 0)
               (void) WriteBlobByte(image,(unsigned char) (byte << (8-bit)));
@@ -1016,7 +1024,7 @@ static MagickBooleanType WriteSUNImage(const ImageInfo *image_info,Image *image,
             {
               (void) WriteBlobByte(image,(unsigned char)
                 GetPixelIndex(image,p));
-              p+=GetPixelChannels(image);
+              p+=(ptrdiff_t) GetPixelChannels(image);
             }
             if (image->columns & 0x01)
               (void) WriteBlobByte(image,0);  /* pad scanline */

@@ -17,13 +17,13 @@
 %                               August 2013                                   %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2013 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -144,8 +144,10 @@ static Image *ReadRGFImage(const ImageInfo *image_info,ExceptionInfo *exception)
   /*
     Read RGF header.
   */
-  image->columns = (unsigned long) ReadBlobByte(image);
-  image->rows = (unsigned long) ReadBlobByte(image);
+  image->columns=(unsigned long) ReadBlobByte(image);
+  image->rows=(unsigned long) ReadBlobByte(image);
+  if (EOFBlob(image) != MagickFalse)
+    ThrowReaderException(CorruptImageError,"ImproperImageHeader");
   image->depth=8;
   image->storage_class=PseudoClass;
   image->colors=2;
@@ -179,11 +181,11 @@ static Image *ReadRGFImage(const ImageInfo *image_info,ExceptionInfo *exception)
   if (data == (unsigned char *) NULL)
     ThrowReaderException(ResourceLimitError,"MemoryAllocationFailed");
   p=data;
-  for (i=0; i < (ssize_t) (image->columns * image->rows); i++) 
-    {
-      *p++=ReadBlobByte(image);
-    }
-
+  for (i=0; i < (ssize_t) (image->columns*image->rows); i++) 
+    *p++=(char) ReadBlobByte(image);
+  if (EOFBlob(image) != MagickFalse)
+    ThrowFileException(exception,CorruptImageError,"UnexpectedEndOfFile",
+      image->filename);
   /*
     Convert RGF image to pixel packets.
   */
@@ -204,7 +206,7 @@ static Image *ReadRGFImage(const ImageInfo *image_info,ExceptionInfo *exception)
       byte>>=1;
       if (bit == 8)
         bit=0;
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;
@@ -381,7 +383,7 @@ static MagickBooleanType WriteRGFImage(const ImageInfo *image_info,Image *image,
           bit=0;
           byte=0;
         }
-      p+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (bit != 0)
     {

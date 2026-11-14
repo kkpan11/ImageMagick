@@ -17,13 +17,13 @@
 %                                April 2016                                   %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2016 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -58,6 +58,7 @@
 #include "MagickCore/option.h"
 #include "MagickCore/pixel-accessor.h"
 #include "MagickCore/quantum-private.h"
+#include "MagickCore/resource_.h"
 #include "MagickCore/static.h"
 #include "MagickCore/string_.h"
 #include "MagickCore/string-private.h"
@@ -177,6 +178,8 @@ static Image *ReadFLIFImage(const ImageInfo *image_info,
       ThrowReaderException(CorruptImageError,"CorruptImage");
     }
   image_count=flif_decoder_num_images(flifdec);
+  if (AcquireMagickResource(ListLengthResource,image_count) == MagickFalse)
+    ThrowReaderException(ResourceLimitError,"ListLengthExceedsLimit");
   flifimage=flif_decoder_get_image(flifdec,0);
   length=sizeof(unsigned short)*4*flif_image_get_width(flifimage);
   pixels=(unsigned short *) AcquireQuantumMemory(1,length);
@@ -213,7 +216,7 @@ static Image *ReadFLIFImage(const ImageInfo *image_info,
     image->dispose=BackgroundDispose;
     for (y=0; y < (ssize_t) image->rows; y++)
     {
-      flif_image_read_row_RGBA16(flifimage,y,pixels,length);
+      flif_image_read_row_RGBA16(flifimage,(uint32_t) y,pixels,length);
       p=pixels;
       q=QueueAuthenticPixels(image,0,y,image->columns,1,exception);
       if (q == (Quantum *) NULL)
@@ -224,7 +227,7 @@ static Image *ReadFLIFImage(const ImageInfo *image_info,
         SetPixelGreen(image,ScaleShortToQuantum(*p++),q);
         SetPixelBlue(image,ScaleShortToQuantum(*p++),q);
         SetPixelAlpha(image,ScaleShortToQuantum(*p++),q);
-        q+=GetPixelChannels(image);
+        q+=(ptrdiff_t) GetPixelChannels(image);
       }
       if (SyncAuthenticPixels(image,exception) == MagickFalse)
         break;
@@ -487,9 +490,9 @@ static MagickBooleanType WriteFLIFImage(const ImageInfo *image_info,
               *qs++=ScaleQuantumToShort(GetPixelAlpha(image,p));
             else
               *qs++=0xFFFF;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
-          flif_image_write_row_RGBA16(flifimage,y,pixels,length);
+          flif_image_write_row_RGBA16(flifimage,(uint32_t) y,pixels,length);
         }
       else
         {
@@ -503,13 +506,14 @@ static MagickBooleanType WriteFLIFImage(const ImageInfo *image_info,
               *qc++=ScaleQuantumToChar(GetPixelAlpha(image,p));
             else
               *qc++=0xFF;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
-          flif_image_write_row_RGBA8(flifimage,y,pixels,length);
+          flif_image_write_row_RGBA8(flifimage,(uint32_t) y,pixels,length);
         }
     }
-    flif_image_set_frame_delay(flifimage,(uint32_t) image->delay*100/
-      image->ticks_per_second);
+    if (image->ticks_per_second != 0)
+     flif_image_set_frame_delay(flifimage,(uint32_t) (100*image->delay/
+       image->ticks_per_second));
     flif_encoder_add_image(flifenc,flifimage);
     if (GetNextImageInList(image) == (Image *) NULL)
       break;

@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -74,7 +74,7 @@
 #define MAP_FAILED      ((void *)(LONG_PTR)-1)
 #endif
 #define MaxWideByteExtent  100
-
+
 /*
   Typedef declarations.
 */
@@ -406,22 +406,70 @@ MagickPrivate int gettimeofday (struct timeval *time_value,
       time=date_time.QuadPart;
       time-=EpochFiletime;
       time/=10;
-      time_value->tv_sec=(ssize_t) (time / 1000000);
-      time_value->tv_usec=(ssize_t) (time % 1000000);
+      time_value->tv_sec=(long) (time / 1000000);
+      time_value->tv_usec=(long) (time % 1000000);
     }
   if (time_zone != (struct timezone *) NULL)
     {
+      int
+        daylight;
+
+      long
+        timezone=0;
+
       if (is_tz_set == 0)
         {
           _tzset();
           is_tz_set++;
         }
-      time_zone->tz_minuteswest=_timezone/60;
-      time_zone->tz_dsttime=_daylight;
+      _get_timezone(&timezone);
+      time_zone->tz_minuteswest=timezone/60;
+      _get_daylight(&daylight);
+      time_zone->tz_dsttime=daylight;
     }
   return(0);
 }
 #endif
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   N T A c c e s s W i d e                                                   %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% NTAccessWide() checks the file accessibility of a file path.
+#
+# The format of the NTAccessWide method is:
+%
+%     int NTAccessWide(const char *path, int mode)
+%
+%  A description of each parameter follows:
+%
+%    o path: the file path.
+%
+%    o mode: the accessibility mode.
+%
+*/
+MagickExport int NTAccessWide(const char *path, int mode)
+{
+  int
+    status;
+
+  wchar_t
+    *path_wide;
+
+  path_wide=NTCreateWidePath(path);
+  if (path_wide == (wchar_t *) NULL)
+    return(-1);
+  status=_waccess(path_wide,mode);
+  path_wide=(wchar_t *) RelinquishMagickMemory(path_wide);
+  return(status);
+}
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -529,9 +577,77 @@ MagickPrivate int NTCloseDirectory(DIR *entry)
 */
 MagickPrivate int NTCloseLibrary(void *handle)
 {
-  return(!(FreeLibrary((HINSTANCE) handle)));
+  return(FreeLibrary((HINSTANCE) handle) ? 0 : 1);
 }
 
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   N T C r e a t e W i d e P a t h                                           %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  NTCreateWidePath() returns the wide-character version of the specified 
+%  UTF-8 path.
+%
+%  The format of the NTCreateWidePath method is:
+%
+%      void NTCreateWidePath(void *handle)
+%
+%  A description of each parameter follows:
+%
+%    o utf8: Specifies a handle to a previously loaded dynamic module.
+%
+*/
+MagickExport wchar_t* NTCreateWidePath(const char *utf8)
+{
+  int
+    count;
+
+  wchar_t
+    *wide;
+
+  count=MultiByteToWideChar(CP_UTF8,0,utf8,-1,NULL,0);
+  if ((count > MAX_PATH) && (strncmp(utf8,"\\\\?\\",4) != 0) &&
+      (NTLongPathsEnabled() == MagickFalse))
+    {
+      char
+        buffer[MagickPathExtent];
+
+      wchar_t
+        shortPath[MAX_PATH],
+        *longPath;
+
+      size_t
+        length;
+
+      (void) FormatLocaleString(buffer,MagickPathExtent,"\\\\?\\%s",utf8);
+      count+=4;
+      longPath=(wchar_t *) NTAcquireQuantumMemory((size_t) count,
+        sizeof(*longPath));
+      if (longPath == (wchar_t *) NULL)
+        return((wchar_t *) NULL);
+      count=MultiByteToWideChar(CP_UTF8,0,buffer,-1,longPath,count);
+      if (count != 0)
+        count=(int) GetShortPathNameW(longPath,shortPath,MAX_PATH);
+      longPath=(wchar_t *) RelinquishMagickMemory(longPath);
+      if ((count < 5) || (count >= MAX_PATH))
+        return((wchar_t *) NULL);
+      length=(size_t) count-3;
+      wide=(wchar_t *) NTAcquireQuantumMemory(length,sizeof(*wide));
+      wcscpy_s(wide,length,shortPath+4);
+      return(wide);
+    }
+  wide=(wchar_t *) NTAcquireQuantumMemory((size_t) count,sizeof(*wide));
+  if ((wide != (wchar_t *) NULL) &&
+      (MultiByteToWideChar(CP_UTF8,0,utf8,-1,wide,count) == 0))
+    wide=(wchar_t *) RelinquishMagickMemory(wide);
+  return(wide);
+}
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -636,7 +752,6 @@ MagickPrivate double NTErf(double x)
   y=1.0-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*exp(-x*x);
   return(sign*y);
 }
-
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -964,8 +1079,7 @@ void *NTGetLibrarySymbol(void *handle,const char *name)
     return((void *) NULL);
   return((void *) proc_address);
 }
-
-
+
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %
@@ -1099,8 +1213,8 @@ static int NTLocateGhostscript(DWORD flags,int *root_index,
             major=0;
             minor=0;
             patch=0;
-            if (sscanf(key,"%d.%d.%d",&major,&minor,&patch) != 3)
-              if (sscanf(key,"%d.%d",&major,&minor) != 2)
+            if (MagickSscanf(key,"%d.%d.%d",&major,&minor,&patch) != 3)
+              if (MagickSscanf(key,"%d.%d",&major,&minor) != 2)
                 continue;
             if ((major > *major_version) ||
                ((major == *major_version) && (minor > *minor_version)) ||
@@ -1503,6 +1617,45 @@ MagickPrivate void NTGhostscriptUnLoadDLL(void)
 %                                                                             %
 %                                                                             %
 %                                                                             %
+%   N T I s L i n k W i d e                                                   %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  NTIsSymlinkWide() returns a boolean value indicating whether the specified path
+%  is a a link.
+%
+%  The format of the NTIsSymlinkWide method is:
+%
+%      MagickBooleanType NTIsSymlinkWide(const char *path)
+%
+%  A description of each parameter follows:
+%
+%    o path: the file path.
+%
+*/
+MagickExport MagickBooleanType NTIsSymlinkWide(const char *path)
+{
+  DWORD
+    attributes;
+
+  wchar_t
+    *path_wide;
+
+  path_wide=NTCreateWidePath(path);
+  attributes=GetFileAttributesW(path_wide);
+  if (attributes == INVALID_FILE_ATTRIBUTES)
+    return(MagickFalse);
+  return(((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) ? MagickTrue : 
+    MagickFalse);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
 %   N T L o n g P a t h s E n a b l e d                                       %
 %                                                                             %
 %                                                                             %
@@ -1688,8 +1841,8 @@ MagickPrivate DIR *NTOpenDirectory(const char *path)
     MagickPathExtent);
   if (length == 0)
     return((DIR *) NULL);
-  if(wcsncat(file_specification,L"\\*.*",MagickPathExtent-wcslen(
-      file_specification)-1) == (wchar_t *) NULL)
+  if (wcsncat_s(file_specification,MagickPathExtent,L"\\*.*",MagickPathExtent-
+      wcslen(file_specification)-1) != 0)
     return((DIR *) NULL);
   entry=(DIR *) AcquireCriticalMemory(sizeof(DIR));
   entry->firsttime=TRUE;
@@ -1726,7 +1879,6 @@ MagickPrivate DIR *NTOpenDirectory(const char *path)
 %      is to be loaded.
 %
 */
-
 static UINT ChangeErrorMode(void)
 {
   typedef UINT
@@ -1763,7 +1915,7 @@ static inline void *NTLoadLibrary(const char *filename)
     *path;
 
   library=(void *) NULL;
-  path=create_wchar_path(filename);
+  path=NTCreateWidePath(filename);
   if (path != (wchar_t *) NULL)
     {
       library=LoadLibraryExW(path,NULL,LOAD_WITH_ALTERED_SEARCH_PATH);
@@ -1811,6 +1963,177 @@ MagickPrivate void *NTOpenLibrary(const char *filename)
 #endif
   SetErrorMode(mode);
   return(handle);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%  N T O p e n F i l e W i d e                                                %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  NTOpenFileWide() opens a file and returns a file pointer.
+%
+%  The format of the NTOpenFileWide method is:
+%
+%      FILE *NTOpenFileWide(const char* path, const char* mode)
+%
+%  A description of each parameter follows:
+%
+%    o path: the file path.
+%
+%    o mode: the file open mode.
+%
+*/
+static inline wchar_t *create_wchar_mode(const char *mode)
+{
+  int
+    count;
+
+  wchar_t
+    *wide;
+
+  count=MultiByteToWideChar(CP_UTF8,0,mode,-1,NULL,0);
+  wide=(wchar_t *) AcquireQuantumMemory((size_t) count+1,
+    sizeof(*wide));
+  if (wide == (wchar_t *) NULL)
+    return((wchar_t *) NULL);
+  if (MultiByteToWideChar(CP_UTF8,0,mode,-1,wide,count) == 0)
+    {
+      wide=(wchar_t *) RelinquishMagickMemory(wide);
+      return((wchar_t *) NULL);
+    }
+  /* Specifies that the file is not inherited by child processes */
+  wide[count] = L'\0';
+  wide[count-1] = L'N';
+  return(wide);
+}
+
+MagickExport FILE *NTOpenFileWide(const char* path, const char* mode)
+{
+  FILE
+    *file;
+
+  wchar_t
+    *mode_wide,
+    *path_wide;
+
+  path_wide=NTCreateWidePath(path);
+  if (path_wide == (wchar_t *) NULL)
+    return((FILE *) NULL);
+  mode_wide=create_wchar_mode(mode);
+  if (mode_wide == (wchar_t *) NULL)
+    {
+      path_wide=(wchar_t *) RelinquishMagickMemory(path_wide);
+      return((FILE *) NULL);
+    }
+  if (_wfopen_s(&file,path_wide,mode_wide) != 0)
+    file=(FILE *) NULL;
+  mode_wide=(wchar_t *) RelinquishMagickMemory(mode_wide);
+  path_wide=(wchar_t *) RelinquishMagickMemory(path_wide);
+  return(file);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%  N T O p e n P i p e W i d e                                                %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  NTOpenPipeWide() opens a pipe and returns a file pointer.
+%
+%  The format of the NTOpenPipeWide method is:
+%
+%      FILE *NTOpenPipeWide(const char* command, const char* type)
+%
+%  A description of each parameter follows:
+%
+%    o command: the command to execute.
+%
+%    o type: the file open mode.
+%
+*/
+MagickExport FILE *NTOpenPipeWide(const char *command,const char *type)
+{
+  FILE
+    *file;
+
+  int
+    length;
+
+  wchar_t
+    *command_wide,
+    type_wide[5];
+
+  file=(FILE *) NULL;
+  length=MultiByteToWideChar(CP_UTF8,0,type,-1,type_wide,5);
+  if (length == 0)
+    return(file);
+  length=MultiByteToWideChar(CP_UTF8,0,command,-1,NULL,0);
+  if (length == 0)
+    return(file);
+  command_wide=(wchar_t *) AcquireQuantumMemory((size_t) length,
+    sizeof(*command_wide));
+  if (command_wide == (wchar_t *) NULL)
+    return(file);
+  length=MultiByteToWideChar(CP_UTF8,0,command,-1,command_wide,length);
+  if (length != 0)
+    file=_wpopen(command_wide,type_wide);
+  command_wide=(wchar_t *) RelinquishMagickMemory(command_wide);
+  return(file);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%  N T O p e n W i d e                                                        %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  NTOpenWide() opens the file specified by path and mode.
+%
+%  The format of the NTOpenWide method is:
+%
+%      FILE *NTOpenWide(const char* path, const char* mode)
+%
+%  A description of each parameter follows:
+%
+%    o path: the file path.
+%
+%    o flags: the file open flags.
+%
+%    o mode: the file open mode.
+%
+*/
+MagickExport int NTOpenWide(const char* path,int flags,mode_t mode)
+{
+  int
+    file_handle,
+    status;
+
+  wchar_t
+    *path_wide;
+
+  path_wide=NTCreateWidePath(path);
+  if (path_wide == (wchar_t *) NULL)
+    return(-1);
+  /* O_NOINHERIT specifies that the file is not inherited by child processes */
+  status=_wsopen_s(&file_handle,path_wide,flags | O_NOINHERIT,_SH_DENYNO,mode);
+  path_wide=(wchar_t *) RelinquishMagickMemory(path_wide);
+  return(status == 0 ? file_handle : -1);
 }
 
 /*
@@ -1867,6 +2190,94 @@ MagickPrivate struct dirent *NTReadDirectory(DIR *entry)
 %                                                                             %
 %                                                                             %
 %                                                                             %
+%    N T R e a l P a t h W i d e                                              %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  NTRealPathWide returns the absolute path of the specified path.
+%
+%  The format of the NTRealPathWide method is:
+%
+%      char *NTRealPathWide(const char *path)
+%
+%  A description of each parameter follows:
+%
+%    o path: the file path.
+%
+*/
+static inline wchar_t* resolve_symlink(const wchar_t* path)
+{
+  DWORD
+    link_length;
+
+  HANDLE
+    file_handle;
+
+  wchar_t
+    *link;
+
+  file_handle=CreateFileW(path,GENERIC_READ,FILE_SHARE_READ |FILE_SHARE_WRITE |
+    FILE_SHARE_DELETE,NULL,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS,NULL);
+  if (file_handle == INVALID_HANDLE_VALUE)
+    return((wchar_t *) NULL);
+  link_length=GetFinalPathNameByHandleW(file_handle,NULL,0,
+    FILE_NAME_NORMALIZED);
+  link=(wchar_t *) AcquireQuantumMemory(link_length,sizeof(wchar_t));
+  if (link == (wchar_t *) NULL)
+    {
+      CloseHandle(file_handle);
+      return((wchar_t *) NULL);
+    }
+  GetFinalPathNameByHandleW(file_handle,link,link_length,FILE_NAME_NORMALIZED);
+  CloseHandle(file_handle);
+  return(link);
+}
+
+MagickExport char *NTRealPathWide(const char *path)
+{
+  char
+    *real_path;
+
+  wchar_t
+    *wide_real_path,
+    *wide_path;
+
+  wide_path=NTCreateWidePath(path);
+  wide_real_path=resolve_symlink(wide_path);
+  if (wide_real_path == (wchar_t*) NULL)
+    {
+      DWORD
+        full_path_length;
+
+      full_path_length=GetFullPathNameW(wide_path,0,NULL,NULL);
+      wide_real_path=(wchar_t *) AcquireQuantumMemory(full_path_length,
+        sizeof(wchar_t));
+      if (wide_real_path == (wchar_t*) NULL)
+        {
+          wide_path=(wchar_t *) RelinquishMagickMemory(wide_path);
+          return((char*) NULL);
+        }
+      GetFullPathNameW(wide_path,full_path_length,wide_real_path,NULL);
+    }
+  wide_path=(wchar_t *) RelinquishMagickMemory(wide_path);
+  /*
+    Remove \\?\ prefix for POSIX-like behavior.
+  */
+  if (wcsncmp(wide_real_path,L"\\\\?\\",4) == 0)
+    real_path=create_utf8_string(wide_real_path+4);
+  else
+    real_path=create_utf8_string(wide_real_path);
+  wide_real_path=(wchar_t *) RelinquishMagickMemory(wide_real_path);
+  return(real_path);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
 %   N T R e g i s t r y K e y L o o k u p                                     %
 %                                                                             %
 %                                                                             %
@@ -1909,6 +2320,93 @@ MagickPrivate unsigned char *NTRegistryKeyLookup(const char *subkey)
   if (value == (unsigned char *) NULL)
     value=NTGetRegistryValue(HKEY_CURRENT_USER,package_key,0,subkey);
   return(value);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   N T R e m o v e W i d e                                                   %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  NTRemoveWide() removes the specified file.
+%
+%  The format of the NTRemoveWide method is:
+%
+%      int NTRemoveWide(const char *path)
+%
+%  A description of each parameter follows:
+%
+%    o path: the file path.
+%
+*/
+MagickExport int NTRemoveWide(const char *path)
+{
+  int
+    status;
+
+  wchar_t
+    *path_wide;
+
+  path_wide=NTCreateWidePath(path);
+  if (path_wide == (wchar_t *) NULL)
+    return(-1);
+  status=_wremove(path_wide);
+  path_wide=(wchar_t *) RelinquishMagickMemory(path_wide);
+  return(status);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   N T R e n a m e W i d e                                                   %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  NTRenameWide() renames a file, replacing an existing destination file.
+%
+%  The format of the NTRenameWide method is:
+%
+%      int NTRenameWide(const char *source, const char *destination)
+%
+%  A description of each parameter follows:
+%
+%    o source: the source file path.
+%
+%    o destination: the destination file path.
+%
+*/
+MagickExport int NTRenameWide(const char* source, const char* destination)
+{
+ int
+   status;
+
+  wchar_t
+    *destination_wide,
+    *source_wide;
+
+  source_wide=NTCreateWidePath(source);
+  if (source_wide == (wchar_t *) NULL)
+    return(-1);
+  destination_wide=NTCreateWidePath(destination);
+  if (destination_wide == (wchar_t *) NULL)
+    {
+      source_wide=(wchar_t *) RelinquishMagickMemory(source_wide);
+      return(-1);
+    }
+  status=MoveFileExW(source_wide,destination_wide,MOVEFILE_REPLACE_EXISTING) ?
+    0 : -1;
+  destination_wide=(wchar_t *) RelinquishMagickMemory(destination_wide);
+  source_wide=(wchar_t *) RelinquishMagickMemory(source_wide);
+  return(status);
 }
 
 /*
@@ -1985,7 +2483,6 @@ MagickPrivate MagickBooleanType NTReportEvent(const char *event,
 */
 MagickPrivate unsigned char *NTResourceToBlob(const char *id)
 {
-
 #ifndef MAGICKCORE_LIBRARY_NAME
   char
     path[MagickPathExtent];
@@ -2052,6 +2549,174 @@ MagickPrivate unsigned char *NTResourceToBlob(const char *id)
 %                                                                             %
 %                                                                             %
 %                                                                             %
+%   NT S e t F i l e T i m e s t a m p                                        %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  NTSetFileTimestamp() sets the file timestamps for a specified file.
+%
+%  The format of the NTSetFileTimestamp method is:
+%
+%      int NTSetFileTimestamp(const char *path, struct stat *attributes)
+%
+%  A description of each parameter follows:
+%
+%    o path: the file path.
+%
+%    o attributes: the file attributes.
+%
+*/
+MagickExport int NTSetFileTimestamp(const char *path, struct stat *attributes)
+{
+  HANDLE
+    handle;
+
+  int
+    status;
+
+  wchar_t
+    *path_wide;
+
+  status=(-1);
+  path_wide=NTCreateWidePath(path);
+  if (path_wide == (WCHAR *) NULL)
+    return(status);
+  handle=CreateFileW(path_wide,FILE_WRITE_ATTRIBUTES,FILE_SHARE_WRITE |
+    FILE_SHARE_READ,NULL,OPEN_EXISTING,0,NULL);
+  if (handle != (HANDLE) NULL)
+    {
+      FILETIME
+        creation_time,
+        last_access_time,
+        last_write_time;
+
+      ULARGE_INTEGER
+        date_time;
+
+      date_time.QuadPart=(ULONGLONG) (attributes->st_ctime*10000000LL)+
+        116444736000000000LL;
+      creation_time.dwLowDateTime=date_time.LowPart;
+      creation_time.dwHighDateTime=date_time.HighPart;
+      date_time.QuadPart=(ULONGLONG) (attributes->st_atime*10000000LL)+
+        116444736000000000LL;
+      last_access_time.dwLowDateTime=date_time.LowPart;
+      last_access_time.dwHighDateTime=date_time.HighPart;
+      date_time.QuadPart=(ULONGLONG) (attributes->st_mtime*10000000LL)+
+        116444736000000000LL;
+      last_write_time.dwLowDateTime=date_time.LowPart;
+      last_write_time.dwHighDateTime=date_time.HighPart;
+      status=SetFileTime(handle,&creation_time,&last_access_time,&last_write_time);
+      CloseHandle(handle);
+      status=0;
+    }
+  path_wide=(WCHAR *) RelinquishMagickMemory(path_wide);
+  return(status);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   N T S t a t W i d e                                                       %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  NTStatWide() gets the file attributes for a specified file.
+%
+%  The format of the NTStatWide method is:
+%
+%      int NTStatWide(const char *path,struct stat *attributes)
+%
+%  A description of each parameter follows:
+%
+%    o path: the file path.
+%
+%    o attributes: the file attributes.
+%
+*/
+
+static inline _ino_t MapFileIndexToIno(uint64_t fileIndex)
+{
+  fileIndex^=fileIndex >> 33;
+  fileIndex*=0xff51afd7ed558ccdULL;
+  fileIndex^=fileIndex >> 33;
+  fileIndex*=0xc4ceb9fe1a85ec53ULL;
+  fileIndex^=fileIndex >> 33;
+  return((_ino_t) fileIndex);
+}
+
+MagickExport int NTStatWide(const char *path,struct stat *attributes)
+{
+#ifndef S_IFDIR
+  #define S_IFDIR 0040000 /* directory */
+#endif
+#ifndef S_IFREG
+  #define S_IFREG 0100000 /* regular file */
+#endif
+#ifndef S_IRUSR
+  #define S_IRUSR 0000400 /* owner has read permission */
+#endif
+#ifndef S_IWUSR
+  #define S_IWUSR 0000200 /* owner has write permission */
+#endif
+#ifndef S_IXUSR
+  #define S_IXUSR 0000100 /* owner has execute/search permission */
+#endif
+
+  int
+    status;
+
+  wchar_t
+    *path_wide;
+
+  path_wide=NTCreateWidePath(path);
+  if (path_wide == (WCHAR *) NULL)
+    return(-1);
+  status=wstat(path_wide,attributes);
+  if (status == 0)
+    {
+      HANDLE handle = CreateFileW(path_wide,FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,NULL,
+        OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS,NULL);
+      if (handle != INVALID_HANDLE_VALUE)
+        {
+          BY_HANDLE_FILE_INFORMATION
+            file_info;
+
+          /*
+            POSIX emulation of Windows file attributes.
+          */
+          if (GetFileInformationByHandle(handle,&file_info) != 0)
+            {
+              attributes->st_dev=(dev_t) file_info.dwVolumeSerialNumber;
+              attributes->st_ino=MapFileIndexToIno((((uint64_t)
+                file_info.nFileIndexHigh) << 32) | (uint64_t)
+                file_info.nFileIndexLow);
+              attributes->st_mode=0;
+              if ((file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+                attributes->st_mode|=S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR;
+              else
+                attributes->st_mode|=S_IFREG | S_IRUSR | S_IWUSR;
+              if ((file_info.dwFileAttributes & FILE_ATTRIBUTE_READONLY) != 0)
+                attributes->st_mode&=~S_IWUSR;
+            }
+          CloseHandle(handle);
+        }
+  }
+  path_wide=(WCHAR *) RelinquishMagickMemory(path_wide);
+  return(status);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
 %   N T S y s t e m C o m m a n d                                             %
 %                                                                             %
 %                                                                             %
@@ -2090,7 +2755,7 @@ MagickPrivate int NTSystemCommand(const char *command,char *output)
       error=NTGetLastErrorMessage(last_error); \
       if (error != (char *) NULL) \
         { \
-          CopyMagickString(output,error,MagickPathExtent); \
+          (void) CopyMagickString(output,error,MagickPathExtent); \
           error=DestroyString(error); \
         } \
     }
@@ -2204,7 +2869,7 @@ MagickPrivate int NTSystemCommand(const char *command,char *output)
             (size_t) bytes_read+1);
           if (count > 0)
             {
-              CopyMagickString(output+output_offset,buffer,count);
+              (void) CopyMagickString(output+output_offset,buffer,count);
               output_offset+=count-1;
             }
         }
@@ -2434,7 +3099,6 @@ MagickPrivate void NTWarningHandler(const ExceptionType severity,
 %      void NTWindowsGenesis(void)
 %
 */
-
 MagickPrivate void NTWindowsGenesis(void)
 {
   char
@@ -2474,7 +3138,7 @@ MagickPrivate void NTWindowsGenesis(void)
         wchar_t
           *lib_path;
 
-        lib_path=create_wchar_path((const char *) path);
+        lib_path=NTCreateWidePath((const char *) path);
         if (lib_path != (wchar_t *) NULL)
           {
             SetDllDirectoryW(lib_path);
@@ -2485,8 +3149,7 @@ MagickPrivate void NTWindowsGenesis(void)
   }
 #endif
 }
-
-
+
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %

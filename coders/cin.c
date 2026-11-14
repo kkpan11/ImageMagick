@@ -20,13 +20,13 @@
 %                               October 2003                                  %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2003 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -132,8 +132,7 @@ typedef struct _CINFilmInfo
 
   char
     frame_id[32],
-    slate_info[200],
-    reserve[740];
+    slate_info[200];
 } CINFilmInfo;
 
 typedef struct _CINImageChannel
@@ -193,9 +192,6 @@ typedef struct _CINOriginationInfo
     x_pitch,
     y_pitch,
     gamma;
-
-  char
-    reserve[40];
 } CINOriginationInfo;
 
 typedef struct _CINUserInfo
@@ -548,7 +544,7 @@ static Image *ReadCINImage(const ImageInfo *image_info,ExceptionInfo *exception)
   cin.image.green_primary_chromaticity[0]=ReadBlobFloat(image);
   offset+=4;
   if (IsFloatDefined(cin.image.green_primary_chromaticity[0]) != MagickFalse)
-    image->chromaticity.red_primary.x=cin.image.green_primary_chromaticity[0];
+    image->chromaticity.green_primary.x=cin.image.green_primary_chromaticity[0];
   cin.image.green_primary_chromaticity[1]=ReadBlobFloat(image);
   offset+=4;
   if (IsFloatDefined(cin.image.green_primary_chromaticity[1]) != MagickFalse)
@@ -590,12 +586,12 @@ static Image *ReadCINImage(const ImageInfo *image_info,ExceptionInfo *exception)
   cin.origination.x_offset=ReadBlobSignedLong(image);
   offset+=4;
   if ((size_t) cin.origination.x_offset != ~0UL)
-    (void) FormatImageProperty(image,"dpx:origination.x_offset","%.20g",
+    (void) FormatImageProperty(image,"dpx:origination.x_offset","%.17g",
       (double) cin.origination.x_offset);
   cin.origination.y_offset=(ssize_t) ReadBlobLong(image);
   offset+=4;
   if ((size_t) cin.origination.y_offset != ~0UL)
-    (void) FormatImageProperty(image,"dpx:origination.y_offset","%.20g",
+    (void) FormatImageProperty(image,"dpx:origination.y_offset","%.17g",
       (double) cin.origination.y_offset);
   offset+=ReadBlob(image,sizeof(cin.origination.filename),(unsigned char *)
     cin.origination.filename);
@@ -639,8 +635,9 @@ static Image *ReadCINImage(const ImageInfo *image_info,ExceptionInfo *exception)
   offset+=4;
   if (IsFloatDefined(cin.origination.gamma) != MagickFalse)
     image->gamma=cin.origination.gamma;
-  offset+=ReadBlob(image,sizeof(cin.origination.reserve),(unsigned char *)
-    cin.origination.reserve);
+  if (DiscardBlobBytes(image,40) == MagickFalse)
+    ThrowReaderException(CorruptImageError,"UnexpectedEndOfFile");
+  offset+=40;
   if ((cin.file.image_offset > 2048) && (cin.file.user_length != 0))
     {
       int
@@ -649,28 +646,28 @@ static Image *ReadCINImage(const ImageInfo *image_info,ExceptionInfo *exception)
       /*
         Image film information.
       */
-      cin.film.id=ReadBlobByte(image);
+      cin.film.id=(char) ReadBlobByte(image);
       offset++;
       c=cin.film.id;
       if (c != ~0)
         (void) FormatImageProperty(image,"dpx:film.id","%d",cin.film.id);
-      cin.film.type=ReadBlobByte(image);
+      cin.film.type=(char) ReadBlobByte(image);
       offset++;
       c=cin.film.type;
       if (c != ~0)
         (void) FormatImageProperty(image,"dpx:film.type","%d",cin.film.type);
-      cin.film.offset=ReadBlobByte(image);
+      cin.film.offset=(char) ReadBlobByte(image);
       offset++;
       c=cin.film.offset;
       if (c != ~0)
         (void) FormatImageProperty(image,"dpx:film.offset","%d",
           cin.film.offset);
-      cin.film.reserve1=ReadBlobByte(image);
+      cin.film.reserve1=(char) ReadBlobByte(image);
       offset++;
       cin.film.prefix=ReadBlobLong(image);
       offset+=4;
       if (cin.film.prefix != ~0UL)
-        (void) FormatImageProperty(image,"dpx:film.prefix","%.20g",(double)
+        (void) FormatImageProperty(image,"dpx:film.prefix","%.17g",(double)
           cin.film.prefix);
       cin.film.count=ReadBlobLong(image);
       offset+=4;
@@ -681,7 +678,7 @@ static Image *ReadCINImage(const ImageInfo *image_info,ExceptionInfo *exception)
       cin.film.frame_position=ReadBlobLong(image);
       offset+=4;
       if (cin.film.frame_position != ~0UL)
-        (void) FormatImageProperty(image,"dpx:film.frame_position","%.20g",
+        (void) FormatImageProperty(image,"dpx:film.frame_position","%.17g",
           (double) cin.film.frame_position);
       cin.film.frame_rate=ReadBlobFloat(image);
       offset+=4;
@@ -698,8 +695,9 @@ static Image *ReadCINImage(const ImageInfo *image_info,ExceptionInfo *exception)
       (void) CopyMagickString(property,cin.film.slate_info,
         sizeof(cin.film.slate_info));
       (void) SetImageProperty(image,"dpx:film.slate_info",property,exception);
-      offset+=ReadBlob(image,sizeof(cin.film.reserve),(unsigned char *)
-        cin.film.reserve);
+      if (DiscardBlobBytes(image,740) == MagickFalse)
+        ThrowReaderException(CorruptImageError,"UnexpectedEndOfFile");
+      offset+=740;
     }
   if ((cin.file.image_offset > 2048) && (cin.file.user_length != 0))
     {
@@ -711,16 +709,20 @@ static Image *ReadCINImage(const ImageInfo *image_info,ExceptionInfo *exception)
       */
       if (cin.file.user_length > GetBlobSize(image))
         ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
-      profile=AcquireProfileStringInfo("dpx:user.data",cin.file.user_length,exception);
+      profile=AcquireProfileStringInfo("dpx:user.data",cin.file.user_length,
+        exception);
       if (profile == (StringInfo *) NULL)
-        offset=SeekBlob(image,cin.file.user_length,SEEK_CUR);
+        offset=SeekBlob(image,(MagickOffsetType) cin.file.user_length,SEEK_CUR);
       else
         {
-          offset+=ReadBlob(image,cin.file.user_length,GetStringInfoDatum(profile));
+          offset+=ReadBlob(image,cin.file.user_length,
+            GetStringInfoDatum(profile));
           (void) SetImageProfilePrivate(image,profile,exception);
         }
     }
   image->depth=cin.image.channel[0].bits_per_pixel;
+  if ((image->depth == 0) || (image->depth > 64))
+    ThrowReaderException(CorruptImageError,"ImproperImageHeader");
   image->columns=cin.image.channel[0].pixels_per_line;
   image->rows=cin.image.channel[0].lines_per_image;
   if (image_info->ping != MagickFalse)
@@ -728,6 +730,8 @@ static Image *ReadCINImage(const ImageInfo *image_info,ExceptionInfo *exception)
       (void) CloseBlob(image);
       return(image);
     }
+  if (HeapOverflowSanityCheck(image->columns,3*image->depth) != MagickFalse)
+    ThrowReaderException(ResourceLimitError,"MemoryAllocationFailed");
   if (((MagickSizeType) image->columns*image->rows/8) > GetBlobSize(image))
     ThrowReaderException(CorruptImageError,"InsufficientImageDataInFile");
   for ( ; offset < (MagickOffsetType) cin.file.image_offset; offset++)
@@ -970,21 +974,25 @@ static MagickBooleanType WriteCINImage(const ImageInfo *image_info,Image *image,
   offset=0;
   cin.file.magic=0x802A5FD7UL;
   offset+=WriteBlobLong(image,(unsigned int) cin.file.magic);
-  cin.file.image_offset=0x800;
-  offset+=WriteBlobLong(image,(unsigned int) cin.file.image_offset);
   cin.file.generic_length=0x400;
-  offset+=WriteBlobLong(image,(unsigned int) cin.file.generic_length);
   cin.file.industry_length=0x400;
-  offset+=WriteBlobLong(image,(unsigned int) cin.file.industry_length);
   cin.file.user_length=0x00;
   profile=GetImageProfile(image,"dpx:user.data");
   if (profile != (StringInfo *) NULL)
     {
+      if (GetStringInfoLength(profile) >
+          (size_t) MAGICK_UINT_MAX-0x800-0x2000+1)
+        ThrowWriterException(ResourceLimitError,"ProfileSizeExceedsLimit");
       cin.file.user_length+=(size_t) GetStringInfoLength(profile);
       cin.file.user_length=(((cin.file.user_length+0x2000-1)/0x2000)*0x2000);
     }
+  cin.file.image_offset=cin.file.generic_length+cin.file.industry_length+
+    cin.file.user_length;
+  offset+=WriteBlobLong(image,(unsigned int) cin.file.image_offset);
+  offset+=WriteBlobLong(image,(unsigned int) cin.file.generic_length);
+  offset+=WriteBlobLong(image,(unsigned int) cin.file.industry_length);
   offset+=WriteBlobLong(image,(unsigned int) cin.file.user_length);
-  cin.file.file_size=4*image->columns*image->rows+0x2000;
+  cin.file.file_size=4*image->columns*image->rows+cin.file.image_offset;
   offset+=WriteBlobLong(image,(unsigned int) cin.file.file_size);
   (void) CopyMagickString(cin.file.version,"V4.5",sizeof(cin.file.version));
   offset+=WriteBlob(image,sizeof(cin.file.version),(unsigned char *)
@@ -1042,14 +1050,14 @@ static MagickBooleanType WriteCINImage(const ImageInfo *image_info,Image *image,
     cin.image.channel[i].max_quantity=2.048f;
     offset+=WriteBlobFloat(image,cin.image.channel[0].max_quantity);
   }
-  offset+=WriteBlobFloat(image,image->chromaticity.white_point.x);
-  offset+=WriteBlobFloat(image,image->chromaticity.white_point.y);
-  offset+=WriteBlobFloat(image,image->chromaticity.red_primary.x);
-  offset+=WriteBlobFloat(image,image->chromaticity.red_primary.y);
-  offset+=WriteBlobFloat(image,image->chromaticity.green_primary.x);
-  offset+=WriteBlobFloat(image,image->chromaticity.green_primary.y);
-  offset+=WriteBlobFloat(image,image->chromaticity.blue_primary.x);
-  offset+=WriteBlobFloat(image,image->chromaticity.blue_primary.y);
+  offset+=WriteBlobFloat(image,(float) image->chromaticity.white_point.x);
+  offset+=WriteBlobFloat(image,(float) image->chromaticity.white_point.y);
+  offset+=WriteBlobFloat(image,(float) image->chromaticity.red_primary.x);
+  offset+=WriteBlobFloat(image,(float) image->chromaticity.red_primary.y);
+  offset+=WriteBlobFloat(image,(float) image->chromaticity.green_primary.x);
+  offset+=WriteBlobFloat(image,(float) image->chromaticity.green_primary.y);
+  offset+=WriteBlobFloat(image,(float) image->chromaticity.blue_primary.x);
+  offset+=WriteBlobFloat(image,(float) image->chromaticity.blue_primary.y);
   value=GetCINProperty(image_info,image,"dpx:image.label",exception);
   if (value != (const char *) NULL)
     (void) CopyMagickString(cin.image.label,value,sizeof(cin.image.label));
@@ -1129,17 +1137,16 @@ static MagickBooleanType WriteCINImage(const ImageInfo *image_info,Image *image,
   cin.origination.x_pitch=0.0f;
   value=GetCINProperty(image_info,image,"dpx:origination.x_pitch",exception);
   if (value != (const char *) NULL)
-    cin.origination.x_pitch=StringToDouble(value,(char **) NULL);
+    cin.origination.x_pitch=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,cin.origination.x_pitch);
   cin.origination.y_pitch=0.0f;
   value=GetCINProperty(image_info,image,"dpx:origination.y_pitch",exception);
   if (value != (const char *) NULL)
-    cin.origination.y_pitch=StringToDouble(value,(char **) NULL);
+    cin.origination.y_pitch=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,cin.origination.y_pitch);
-  cin.origination.gamma=image->gamma;
+  cin.origination.gamma=(float) image->gamma;
   offset+=WriteBlobFloat(image,cin.origination.gamma);
-  offset+=WriteBlob(image,sizeof(cin.origination.reserve),(unsigned char *)
-    cin.origination.reserve);
+  offset+=WriteBlobPadding(image,40,'\0');
   /*
     Image film information.
   */
@@ -1182,7 +1189,7 @@ static MagickBooleanType WriteCINImage(const ImageInfo *image_info,Image *image,
   cin.film.frame_rate=0.0f;
   value=GetCINProperty(image_info,image,"dpx:film.frame_rate",exception);
   if (value != (const char *) NULL)
-    cin.film.frame_rate=StringToDouble(value,(char **) NULL);
+    cin.film.frame_rate=StringToFloat(value,(char **) NULL);
   offset+=WriteBlobFloat(image,cin.film.frame_rate);
   value=GetCINProperty(image_info,image,"dpx:film.frame_id",exception);
   if (value != (const char *) NULL)
@@ -1195,13 +1202,20 @@ static MagickBooleanType WriteCINImage(const ImageInfo *image_info,Image *image,
       sizeof(cin.film.slate_info));
   offset+=WriteBlob(image,sizeof(cin.film.slate_info),(unsigned char *)
     cin.film.slate_info);
-  offset+=WriteBlob(image,sizeof(cin.film.reserve),(unsigned char *)
-    cin.film.reserve);
+  offset+=WriteBlobPadding(image,740,'\0');
   if (profile != (StringInfo *) NULL)
-    offset+=WriteBlob(image,GetStringInfoLength(profile),
-      GetStringInfoDatum(profile));
-  while (offset < (MagickOffsetType) cin.file.image_offset)
-    offset+=WriteBlobByte(image,0x00);
+    {
+      length=GetStringInfoLength(profile);
+      count=WriteBlob(image,length,GetStringInfoDatum(profile));
+      if (count != (ssize_t) length)
+        ThrowWriterException(BlobError,"UnableToWriteBlob");
+      offset+=count;
+    }
+  length=(size_t) ((MagickOffsetType) cin.file.image_offset-offset);
+  count=WriteBlobPadding(image,length,'\0');
+  if (count != (ssize_t) length)
+    ThrowWriterException(BlobError,"UnableToWriteBlob");
+  offset+=count;
   /*
     Convert pixel packets to CIN raster image.
   */
@@ -1221,8 +1235,11 @@ static MagickBooleanType WriteCINImage(const ImageInfo *image_info,Image *image,
     (void) ExportQuantumPixels(image,(CacheView *) NULL,quantum_info,
       quantum_type,pixels,exception);
     count=WriteBlob(image,length,pixels);
-    if (count != (ssize_t) length)
-      break;
+    if (count != (ssize_t)length)
+      {
+        status=MagickFalse;
+        break;
+      }
     status=SetImageProgress(image,SaveImageTag,(MagickOffsetType) y,
       image->rows);
     if (status == MagickFalse)

@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -51,7 +51,7 @@ extern "C" {
 #  define opendir(directory)  NTOpenDirectory(directory)
 #endif
 #if !defined(read)
-#  define read(fd,buffer,count)  _read(fd,buffer,(unsigned int) count)
+#  define read(fd,buffer,count)  _read(fd,buffer,(unsigned int) (count))
 #endif
 #if !defined(readdir)
 #  define readdir(directory)  NTReadDirectory(directory)
@@ -61,11 +61,23 @@ extern "C" {
 #  define MAGICKCORE_HAVE_SYSCONF 1
 #endif
 #if !defined(write)
-#  define write(fd,buffer,count)  _write(fd,buffer,(unsigned int) count)
+#  define write(fd,buffer,count)  _write(fd,buffer,(unsigned int) (count))
 #endif
 #if !defined(__MINGW32__)
-#  define fstat  _fstati64
-#  define stat  _stati64
+#  define fdopen  _fdopen
+#  define fileno  _fileno
+#  define fseek   _fseeki64
+#  define ftell   _ftelli64
+#  define getpid  _getpid
+#if !defined(getcwd)
+#  define getcwd  _getcwd
+#endif
+#  define lseek   _lseeki64
+#  define fstat   _fstat64
+#  define setmode _setmode
+#  define stat    _stat64
+#  define tell    _telli64
+#  define wstat   _wstat64
 #endif
 
 #if !defined(XS_VERSION)
@@ -102,6 +114,9 @@ struct timezone
     tz_minuteswest,
     tz_dsttime;
 };
+
+typedef int
+  mode_t;
 #endif
 
 #endif
@@ -119,6 +134,9 @@ static inline void *NTAcquireQuantumMemory(const size_t count,
     }
   return(AcquireMagickMemory(size));
 }
+
+extern MagickExport char
+  *NTRealPathWide(const char *);
 
 extern MagickPrivate char
   *NTGetEnvironmentValue(const char *);
@@ -138,6 +156,18 @@ extern MagickPrivate DIR
 extern MagickPrivate double
   NTElapsedTime(void),
   NTErf(double);
+
+extern MagickExport FILE
+  *NTOpenFileWide(const char *,const char *),
+  *NTOpenPipeWide(const char *,const char *);
+
+extern MagickExport int
+  NTAccessWide(const char *,int),
+  NTOpenWide(const char *,int,mode_t),
+  NTRemoveWide(const char *),
+  NTRenameWide(const char *, const char *),
+  NTSetFileTimestamp(const char *,struct stat *),
+  NTStatWide(const char *,struct stat *);
 
 extern MagickPrivate int
 #if !defined(__MINGW32__)
@@ -160,6 +190,7 @@ extern MagickPrivate MagickBooleanType
   NTReportEvent(const char *,const MagickBooleanType);
 
 extern MagickExport MagickBooleanType
+  NTIsSymlinkWide(const char *),
   NTLongPathsEnabled(void);
 
 extern MagickPrivate struct dirent
@@ -176,6 +207,9 @@ extern MagickPrivate void
   *NTOpenLibrary(const char *),
   NTWindowsGenesis(void),
   NTWindowsTerminus(void);
+
+extern MagickExport wchar_t
+  *NTCreateWidePath(const char *);
 
 #endif /* !XS_VERSION */
 

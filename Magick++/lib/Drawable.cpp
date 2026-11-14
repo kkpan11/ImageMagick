@@ -13,9 +13,6 @@
 #define MAGICK_DRAWABLE_IMPLEMENTATION
 
 #include "Magick++/Include.h"
-#include <math.h>
-#include <string>
-
 #include "Magick++/Drawable.h"
 #include "Magick++/Image.h"
 
@@ -541,8 +538,8 @@ Magick::DrawableCompositeImage::DrawableCompositeImage
     _height(0),
     _image(new Image(filename_))
 {
-  _width=_image->columns();
-  _height=_image->rows();
+  _width=(double) _image->columns();
+  _height=(double) _image->rows();
 }
 Magick::DrawableCompositeImage::DrawableCompositeImage
 ( double x_, double y_,
@@ -554,8 +551,8 @@ Magick::DrawableCompositeImage::DrawableCompositeImage
     _height(0),
     _image(new Image(image_))
 {
-  _width=_image->columns();
-  _height=_image->rows();
+  _width=(double) _image->columns();
+  _height=(double) _image->rows();
 }
 // Copy constructor
 Magick::DrawableCompositeImage::DrawableCompositeImage
@@ -1065,7 +1062,8 @@ Magick::DrawablePushPattern::~DrawablePushPattern ( void )
 void Magick::DrawablePushPattern::operator()
   ( MagickCore::DrawingWand * context_ ) const
 {
-  (void) DrawPushPattern( context_, _id.c_str(), _x, _y, _width, _height );
+  (void) DrawPushPattern( context_, _id.c_str(), (double) _x, (double) _y,
+    (double) _width, (double) _height);
 }
 Magick::DrawableBase* Magick::DrawablePushPattern::copy() const
 {
@@ -1742,7 +1740,8 @@ Magick::DrawableViewbox::~DrawableViewbox ( void )
 void Magick::DrawableViewbox::operator()
   ( MagickCore::DrawingWand * context_ ) const
 {
-  DrawSetViewbox( context_, _x1, _y1, _x2, _y2 );
+  DrawSetViewbox( context_, (double) _x1, (double) _y1, (double) _x2,
+    (double) _y2 );
 }
 Magick::DrawableBase* Magick::DrawableViewbox::copy() const
 {

@@ -83,6 +83,12 @@
     </cache>
     <coder>
       <error>
+        <message name="CoderDoesNotSupportThisStreamType">
+          coder does not support this stream tyype
+        </message>
+        <message name="CoderNestedTooDeeply">
+          coder nested too deeply
+        </message>
         <message name="ColormapTypeNotSupported">
           table de couleurs non supportée
         </message>
@@ -260,12 +266,6 @@
           </message>
           <message name="ImageFileDoesNotContainAnyImageData">
             le fichier image ne contient pas de données d'image
-          </message>
-          <message name="ImageTypeNotSupported">
-            type d'image non supporté
-          </message>
-          <message name="ImproperImageHeader">
-            En-tête d'image incorrect
           </message>
           <message name="InsufficientImageDataInFile">
             Pas assez de données d'image dans le fichier
@@ -513,6 +513,9 @@
         <message name="ColorspaceColorProfileMismatch">
           Le profil colorimétrique ne peut fonctionner que dans un autre espace colorimétrique
         </message>
+        <message name="ExplicitCoderNotAllowed">
+          explicit coder not allowed
+        </message>
         <message name="ImageColorspaceDiffers">
           différences dans les espaces colorimétriques de l'image
         </message>
@@ -531,11 +534,14 @@
         <message name="ImageSizeDiffers">
           différences dans la taille de l'image
         </message>
-        <message name="ImagesTooDissimilar">
-          images too dissimilar
-        </message>
         <message name="LeftAndRightImageSizesDiffer">
           différences dans les tailles des images gauche et droite
+        </message>
+        <message name="ImageSizeLimitExceeded">
+          Image dimension exceeds maximum supported size
+        </message>
+        <message name="ImproperImageHeader">
+          En-tête d'image incorrect
         </message>
         <message name="NegativeOrZeroImageSize">
           Taille d'image négative ou nulle
@@ -559,6 +565,9 @@
       <warning>
         <message name="AssociateProfile">
           associate profile with image, a source and destination color profile required for transform
+        </message>
+        <message name="ImagesTooDissimilar">
+          images too dissimilar
         </message>
         <message name="UnableToTransformColorspace">
           impossible de colorimétrique la transformation
@@ -689,7 +698,6 @@
           manque argument obligatoire
         </message>
         <message name="MissingAnImageFilename">
-        <!-- FUTURE: Depreciate using MissingOutputFilename -->
           nom de fichier d'image absent
         </message>
         <message name="MissingExpression">
@@ -706,6 +714,9 @@
         </message>
         <message name="MustSpecifyImageDepth">
           Il faut spécifier la profondeur d'image
+        </message>
+        <message name="MustSpecifyImageManifest">
+          must specify an image manifest
         </message>
         <message name="MustSpecifyImageSize">
           Il faut spécifier une taille d'image
@@ -1016,7 +1027,7 @@
     <policy>
       <error>
         <message name="NotAuthorized">
-          attempt to perform an operation not allowed by the security policy
+          attempt to perform an operation not authorized by the security policy
         </message>
       </error>
     </policy>
@@ -1041,6 +1052,9 @@
           </message>
           <message name="PixelCacheAllocationFailed">
             Échec allocation du cache pixel
+          </message>
+          <message name="ProfileSizeExceedsLimit">
+            la taille du profil dépasse la limite
           </message>
           <message name="TimeLimitExceeded">
             time limit exceeded
@@ -1123,9 +1137,6 @@
         <warning>
           <message name="MemoryAllocationFailed">
             échec allocation mémoire
-          </message>
-          <message name="ProfileSizeExceedsLimit">
-            la taille du profil dépasse la limite
           </message>
         </warning>
       </limit>

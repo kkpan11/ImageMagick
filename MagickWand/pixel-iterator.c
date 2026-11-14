@@ -23,13 +23,13 @@
 %                                March 2003                                   %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2003 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -166,7 +166,7 @@ WandExport PixelIterator *ClonePixelIterator(const PixelIterator *iterator)
     sizeof(*clone_iterator));
   (void) memset(clone_iterator,0,sizeof(*clone_iterator));
   clone_iterator->id=AcquireWandId();
-  (void) FormatLocaleString(clone_iterator->name,MagickPathExtent,"%s-%.20g",
+  (void) FormatLocaleString(clone_iterator->name,MagickPathExtent,"%s-%.17g",
     PixelIteratorId,(double) clone_iterator->id);
   clone_iterator->exception=AcquireExceptionInfo();
   InheritException(clone_iterator->exception,iterator->exception);
@@ -307,7 +307,7 @@ WandExport PixelIterator *NewPixelIterator(MagickWand *wand)
   iterator=(PixelIterator *) AcquireCriticalMemory(sizeof(*iterator));
   (void) memset(iterator,0,sizeof(*iterator));
   iterator->id=AcquireWandId();
-  (void) FormatLocaleString(iterator->name,MagickPathExtent,"%s-%.20g",
+  (void) FormatLocaleString(iterator->name,MagickPathExtent,"%s-%.17g",
     PixelIteratorId,(double) iterator->id);
   iterator->exception=exception;
   iterator->view=view;
@@ -413,7 +413,7 @@ WandExport PixelIterator *NewPixelRegionIterator(MagickWand *wand,
   iterator=(PixelIterator *) AcquireCriticalMemory(sizeof(*iterator));
   (void) memset(iterator,0,sizeof(*iterator));
   iterator->id=AcquireWandId();
-  (void) FormatLocaleString(iterator->name,MagickPathExtent,"%s-%.20g",
+  (void) FormatLocaleString(iterator->name,MagickPathExtent,"%s-%.17g",
     PixelIteratorId,(double) iterator->id);
   iterator->exception=exception;
   iterator->view=view;
@@ -481,7 +481,7 @@ WandExport PixelWand **PixelGetCurrentIteratorRow(PixelIterator *iterator,
   {
     PixelSetQuantumPixel(GetCacheViewImage(iterator->view),pixels,
       iterator->pixel_wands[x]);
-    pixels+=GetPixelChannels(GetCacheViewImage(iterator->view));
+    pixels+=(ptrdiff_t) GetPixelChannels(GetCacheViewImage(iterator->view));
   }
   *number_wands=iterator->region.width;
   return(iterator->pixel_wands);
@@ -664,7 +664,7 @@ WandExport PixelWand **PixelGetNextIteratorRow(PixelIterator *iterator,
   {
     PixelSetQuantumPixel(GetCacheViewImage(iterator->view),pixels,
       iterator->pixel_wands[x]);
-    pixels+=GetPixelChannels(GetCacheViewImage(iterator->view));
+    pixels+=(ptrdiff_t) GetPixelChannels(GetCacheViewImage(iterator->view));
   }
   *number_wands=iterator->region.width;
   return(iterator->pixel_wands);
@@ -723,7 +723,7 @@ WandExport PixelWand **PixelGetPreviousIteratorRow(PixelIterator *iterator,
   {
     PixelSetQuantumPixel(GetCacheViewImage(iterator->view),pixels,
       iterator->pixel_wands[x]);
-    pixels+=GetPixelChannels(GetCacheViewImage(iterator->view));
+    pixels+=(ptrdiff_t) GetPixelChannels(GetCacheViewImage(iterator->view));
   }
   *number_wands=iterator->region.width;
   return(iterator->pixel_wands);
@@ -914,7 +914,7 @@ WandExport MagickBooleanType PixelSyncIterator(PixelIterator *iterator)
   {
     PixelGetQuantumPixel(GetCacheViewImage(iterator->view),
       iterator->pixel_wands[x],pixels);
-    pixels+=GetPixelChannels(GetCacheViewImage(iterator->view));
+    pixels+=(ptrdiff_t) GetPixelChannels(GetCacheViewImage(iterator->view));
   }
   if (SyncCacheViewAuthenticPixels(iterator->view,iterator->exception) == MagickFalse)
     return(MagickFalse);

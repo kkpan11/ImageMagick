@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -202,7 +202,7 @@ static MagickBooleanType SGIDecode(const size_t bytes_per_pixel,
               return(MagickFalse);
             *q=(*p++);
             *(q+1)=(*p++);
-            q+=8;
+            q+=(ptrdiff_t) 8;
           }
         else
           {
@@ -214,7 +214,7 @@ static MagickBooleanType SGIDecode(const size_t bytes_per_pixel,
             {
               *q=(unsigned char) (pixel >> 8);
               *(q+1)=(unsigned char) pixel;
-              q+=8;
+              q+=(ptrdiff_t) 8;
             }
           }
       }
@@ -237,7 +237,7 @@ static MagickBooleanType SGIDecode(const size_t bytes_per_pixel,
         if (number_packets-- == 0)
           return(MagickFalse);
         *q=(*p++);
-        q+=4;
+        q+=(ptrdiff_t) 4;
       }
     else
       {
@@ -247,7 +247,7 @@ static MagickBooleanType SGIDecode(const size_t bytes_per_pixel,
         for ( ; count != 0; count--)
         {
           *q=(unsigned char) pixel;
-          q+=4;
+          q+=(ptrdiff_t) 4;
         }
       }
   }
@@ -386,8 +386,8 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
     */
     bytes_per_pixel=(size_t) iris_info.bytes_per_pixel;
     number_pixels=(MagickSizeType) iris_info.columns*iris_info.rows;
-    if ((4*bytes_per_pixel*number_pixels) !=
-        ((MagickSizeType) ((size_t) (4*bytes_per_pixel*number_pixels))))
+    if (HeapOverflowSanityCheckGetSize(4*bytes_per_pixel,(size_t) number_pixels,
+         (size_t *) NULL) != MagickFalse)
       ThrowReaderException(ResourceLimitError,"MemoryAllocationFailed");
     pixel_info=AcquireVirtualMemory(iris_info.columns,iris_info.rows*4*
       bytes_per_pixel*sizeof(*pixels));
@@ -424,13 +424,13 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               {
                 *p=scanline[2*x];
                 *(p+1)=scanline[2*x+1];
-                p+=8;
+                p+=(ptrdiff_t) 8;
               }
             else
               for (x=0; x < (ssize_t) iris_info.columns; x++)
               {
                 *p=scanline[x];
-                p+=4;
+                p+=(ptrdiff_t) 4;
               }
           }
           if (y < (ssize_t) iris_info.rows)
@@ -533,7 +533,7 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
                     ThrowReaderException(CorruptImageError,
                       "ImproperImageHeader");
                   }
-                p+=(iris_info.columns*4*bytes_per_pixel);
+                p+=(ptrdiff_t) (iris_info.columns*4*bytes_per_pixel);
               }
               if (y < (ssize_t) iris_info.rows)
                 break;
@@ -576,7 +576,7 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               }
               if (z < (ssize_t) iris_info.depth)
                 break;
-              p+=(iris_info.columns*4*bytes_per_pixel);
+              p+=(ptrdiff_t) (iris_info.columns*4*bytes_per_pixel);
             }
             offset=(ssize_t) SeekBlob(image,position,SEEK_SET);
           }
@@ -612,8 +612,8 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
                 if (image->alpha_trait != UndefinedPixelTrait)
                   SetPixelAlpha(image,ScaleShortToQuantum((unsigned short)
                     ((*(p+6) << 8) | (*(p+7)))),q);
-                p+=8;
-                q+=GetPixelChannels(image);
+                p+=(ptrdiff_t) 8;
+                q+=(ptrdiff_t) GetPixelChannels(image);
               }
               if (SyncAuthenticPixels(image,exception) == MagickFalse)
                 break;
@@ -641,8 +641,8 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               SetPixelAlpha(image,OpaqueAlpha,q);
               if (image->alpha_trait != UndefinedPixelTrait)
                 SetPixelAlpha(image,ScaleCharToQuantum(*(p+3)),q);
-              p+=4;
-              q+=GetPixelChannels(image);
+              p+=(ptrdiff_t) 4;
+              q+=(ptrdiff_t) GetPixelChannels(image);
             }
             if (SyncAuthenticPixels(image,exception) == MagickFalse)
               break;
@@ -681,8 +681,8 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
                 quantum=(size_t) (*p << 8);
                 quantum|=(*(p+1));
                 SetPixelIndex(image,(Quantum) quantum,q);
-                p+=8;
-                q+=GetPixelChannels(image);
+                p+=(ptrdiff_t) 8;
+                q+=(ptrdiff_t) GetPixelChannels(image);
               }
               if (SyncAuthenticPixels(image,exception) == MagickFalse)
                 break;
@@ -705,8 +705,8 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
             for (x=0; x < (ssize_t) image->columns; x++)
             {
               SetPixelIndex(image,*p,q);
-              p+=4;
-              q+=GetPixelChannels(image);
+              p+=(ptrdiff_t) 4;
+              q+=(ptrdiff_t) GetPixelChannels(image);
             }
             if (SyncAuthenticPixels(image,exception) == MagickFalse)
               break;
@@ -868,10 +868,10 @@ static size_t SGIEncode(unsigned char *pixels,size_t length,
   while (p < limit)
   {
     mark=p;
-    p+=8;
+    p+=(ptrdiff_t) 8;
     while ((p < limit) && ((*(p-8) != *(p-4)) || (*(p-4) != *p)))
-      p+=4;
-    p-=8;
+      p+=(ptrdiff_t) 4;
+    p-=(ptrdiff_t)8;
     length=(size_t) (p-mark) >> 2;
     while (length != 0)
     {
@@ -885,9 +885,9 @@ static size_t SGIEncode(unsigned char *pixels,size_t length,
       }
     }
     mark=p;
-    p+=4;
+    p+=(ptrdiff_t) 4;
     while ((p < limit) && (*p == *mark))
-      p+=4;
+      p+=(ptrdiff_t) 4;
     length=(size_t) (p-mark) >> 2;
     while (length != 0)
     {
@@ -1045,12 +1045,12 @@ static MagickBooleanType WriteSGIImage(const ImageInfo *image_info,Image *image,
             *q;
 
           q=(unsigned char *) pixels;
-          q+=((iris_info.rows-1)-y)*(4*iris_info.columns)+4*x;
+          q+=(ptrdiff_t) ((iris_info.rows-1)-y)*(4*iris_info.columns)+4*x;
           *q++=ScaleQuantumToChar(GetPixelRed(image,p));
           *q++=ScaleQuantumToChar(GetPixelGreen(image,p));
           *q++=ScaleQuantumToChar(GetPixelBlue(image,p));
           *q++=ScaleQuantumToChar(GetPixelAlpha(image,p));
-          p+=GetPixelChannels(image);
+          p+=(ptrdiff_t) GetPixelChannels(image);
         }
       else
         for (x=0; x < (ssize_t) image->columns; x++)
@@ -1059,12 +1059,12 @@ static MagickBooleanType WriteSGIImage(const ImageInfo *image_info,Image *image,
             *q;
 
           q=(unsigned short *) pixels;
-          q+=((iris_info.rows-1)-y)*(4*iris_info.columns)+4*x;
+          q+=(ptrdiff_t) ((iris_info.rows-1)-y)*(4*iris_info.columns)+4*x;
           *q++=ScaleQuantumToShort(GetPixelRed(image,p));
           *q++=ScaleQuantumToShort(GetPixelGreen(image,p));
           *q++=ScaleQuantumToShort(GetPixelBlue(image,p));
           *q++=ScaleQuantumToShort(GetPixelAlpha(image,p));
-          p+=GetPixelChannels(image);
+          p+=(ptrdiff_t) GetPixelChannels(image);
         }
       if (image->previous == (Image *) NULL)
         {
@@ -1092,7 +1092,7 @@ static MagickBooleanType WriteSGIImage(const ImageInfo *image_info,Image *image,
                   *q;
 
                 q=(unsigned char *) pixels;
-                q+=y*(4*iris_info.columns)+4*x+z;
+                q+=(ptrdiff_t) y*(4*iris_info.columns)+4*x+z;
                 (void) WriteBlobByte(image,*q);
               }
             else
@@ -1102,7 +1102,7 @@ static MagickBooleanType WriteSGIImage(const ImageInfo *image_info,Image *image,
                   *q;
 
                 q=(unsigned short *) pixels;
-                q+=y*(4*iris_info.columns)+4*x+z;
+                q+=(ptrdiff_t) y*(4*iris_info.columns)+4*x+z;
                 (void) WriteBlobMSBShort(image,*q);
               }
           }
@@ -1115,6 +1115,7 @@ static MagickBooleanType WriteSGIImage(const ImageInfo *image_info,Image *image,
           *packet_info;
 
         size_t
+          extent,
           length,
           number_packets,
           *runlength;
@@ -1133,16 +1134,20 @@ static MagickBooleanType WriteSGIImage(const ImageInfo *image_info,Image *image,
           iris_info.depth*sizeof(*offsets));
         runlength=(size_t *) AcquireQuantumMemory(iris_info.rows,
           iris_info.depth*sizeof(*runlength));
-        packet_info=AcquireVirtualMemory((2*(size_t) iris_info.columns+10)*
-          image->rows,4*sizeof(*packets));
+        extent=(2*(size_t) iris_info.columns+10);
+        if (HeapOverflowSanityCheck(extent,image->rows) != MagickFalse)
+          {
+            offsets=(ssize_t *) RelinquishMagickMemory(offsets);
+            runlength=(size_t *) RelinquishMagickMemory(runlength);
+            ThrowWriterException(ResourceLimitError,"MemoryAllocationFailed");
+          }
+        packet_info=AcquireVirtualMemory(extent*image->rows,4*sizeof(*packets));
         if ((offsets == (ssize_t *) NULL) ||
             (runlength == (size_t *) NULL) ||
             (packet_info == (MemoryInfo *) NULL))
           {
-            if (offsets != (ssize_t *) NULL)
-              offsets=(ssize_t *) RelinquishMagickMemory(offsets);
-            if (runlength != (size_t *) NULL)
-              runlength=(size_t *) RelinquishMagickMemory(runlength);
+            offsets=(ssize_t *) RelinquishMagickMemory(offsets);
+            runlength=(size_t *) RelinquishMagickMemory(runlength);
             if (packet_info != (MemoryInfo *) NULL)
               packet_info=RelinquishVirtualMemory(packet_info);
             pixel_info=RelinquishVirtualMemory(pixel_info);
@@ -1163,7 +1168,7 @@ static MagickBooleanType WriteSGIImage(const ImageInfo *image_info,Image *image,
             runlength[y+z*iris_info.rows]=(size_t) length;
             offset+=(ssize_t) length;
           }
-          q+=(iris_info.columns*4);
+          q+=(ptrdiff_t) (iris_info.columns*4);
         }
         /*
           Write out line start and length tables and runlength-encoded pixels.

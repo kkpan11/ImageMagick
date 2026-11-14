@@ -22,7 +22,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -536,7 +536,7 @@ static inline void IncrementCipherNonce(const size_t length,
     if (nonce[i] != 0)
       return;
   }
-  ThrowFatalException(ResourceLimitFatalError,"Sequence wrap error `%s'");
+  ThrowFatalException(ResourceLimitFatalError,"Sequence wrap error");
 }
 
 MagickExport MagickBooleanType DecipherImage(Image *image,
@@ -683,7 +683,7 @@ MagickExport MagickBooleanType PasskeyDecipherImage(Image *image,
       EncipherAESBlock(aes_info,output_block,output_block);
       for (i=0; i < AESBlocksize; i++)
         p[i]^=output_block[i];
-      p+=AESBlocksize;
+      p+=(ptrdiff_t) AESBlocksize;
     }
     (void) memcpy(output_block,input_block,AESBlocksize*
       sizeof(*output_block));
@@ -903,7 +903,7 @@ MagickExport MagickBooleanType PasskeyEncipherImage(Image *image,
       EncipherAESBlock(aes_info,output_block,output_block);
       for (i=0; i < AESBlocksize; i++)
         p[i]^=output_block[i];
-      p+=AESBlocksize;
+      p+=(ptrdiff_t) AESBlocksize;
     }
     (void) memcpy(output_block,input_block,AESBlocksize*
       sizeof(*output_block));
@@ -951,7 +951,7 @@ MagickExport MagickBooleanType PasskeyEncipherImage(Image *image,
 %
 %  The format of the SetAESKey method is:
 %
-%      SetAESKey(AESInfo *aes_info,const StringInfo *key)
+%      void SetAESKey(AESInfo *aes_info,const StringInfo *key)
 %
 %  A description of each parameter follows:
 %

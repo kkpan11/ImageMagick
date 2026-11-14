@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -341,6 +341,8 @@ static Image *ReadPCXImage(const ImageInfo *image_info,ExceptionInfo *exception)
       ThrowPCXException(CorruptImageError,"ImproperImageHeader");
     image->columns=(size_t) (pcx_info.right-pcx_info.left)+1UL;
     image->rows=(size_t) (pcx_info.bottom-pcx_info.top)+1UL;
+    image->page.x=(ssize_t) pcx_info.left;
+    image->page.y=(ssize_t) pcx_info.top;
     image->depth=pcx_info.bits_per_pixel;
     image->units=PixelsPerInchResolution;
     image->resolution.x=(double) pcx_info.horizontal_resolution;
@@ -401,6 +403,15 @@ static Image *ReadPCXImage(const ImageInfo *image_info,ExceptionInfo *exception)
       ThrowPCXException(CorruptImageError,"ImproperImageHeader");
     if ((MagickSizeType) (pcx_packets/32+128) > GetBlobSize(image))
       ThrowPCXException(CorruptImageError,"ImproperImageHeader");
+    {
+      size_t bytes_per_line = image->columns*pcx_info.bits_per_pixel;
+      if (bytes_per_line != 0)
+        bytes_per_line+=7U;
+      if (bytes_per_line != 0)
+        bytes_per_line/=8U;
+      if ((bytes_per_line == 0) || (pcx_info.bytes_per_line < bytes_per_line))
+        ThrowPCXException(CorruptImageError,"ImproperImageHeader");
+    }
     scanline=(unsigned char *) AcquireQuantumMemory(MagickMax(image->columns,
       pcx_info.bytes_per_line),MagickMax(pcx_info.planes,8)*sizeof(*scanline));
     pixel_info=AcquireVirtualMemory(pcx_packets,2*sizeof(*pixels));
@@ -457,44 +468,6 @@ static Image *ReadPCXImage(const ImageInfo *image_info,ExceptionInfo *exception)
     if (image->storage_class == DirectClass)
       image->alpha_trait=pcx_info.planes > 3 ? BlendPixelTrait :
         UndefinedPixelTrait;
-    else
-      if ((pcx_info.version == 5) ||
-          ((pcx_info.bits_per_pixel*pcx_info.planes) == 1))
-        {
-          /*
-            Initialize image colormap.
-          */
-          if (image->colors > 256)
-            ThrowPCXException(CorruptImageError,"ColormapExceeds256Colors");
-          if ((pcx_info.bits_per_pixel*pcx_info.planes) == 1)
-            {
-              /*
-                Monochrome colormap.
-              */
-              image->colormap[0].red=(Quantum) 0;
-              image->colormap[0].green=(Quantum) 0;
-              image->colormap[0].blue=(Quantum) 0;
-              image->colormap[1].red=QuantumRange;
-              image->colormap[1].green=QuantumRange;
-              image->colormap[1].blue=QuantumRange;
-            }
-          else
-            if (image->colors > 16)
-              {
-                /*
-                  256 color images have their color map at the end of the file.
-                */
-                pcx_info.colormap_signature=(unsigned char) ReadBlobByte(image);
-                count=ReadBlob(image,3*image->colors,pcx_colormap);
-                p=pcx_colormap;
-                for (i=0; i < (ssize_t) image->colors; i++)
-                {
-                  image->colormap[i].red=ScaleCharToQuantum(*p++);
-                  image->colormap[i].green=ScaleCharToQuantum(*p++);
-                  image->colormap[i].blue=ScaleCharToQuantum(*p++);
-                }
-            }
-        }
     /*
       Convert PCX raster image to pixel packets.
     */
@@ -535,7 +508,7 @@ static Image *ReadPCXImage(const ImageInfo *image_info,ExceptionInfo *exception)
                 break;
               }
             }
-            r+=pcx_info.planes;
+            r+=(ptrdiff_t) pcx_info.planes;
           }
         }
       else
@@ -634,7 +607,7 @@ static Image *ReadPCXImage(const ImageInfo *image_info,ExceptionInfo *exception)
             if (image->alpha_trait != UndefinedPixelTrait)
               SetPixelAlpha(image,ScaleCharToQuantum(*r++),q);
           }
-        q+=GetPixelChannels(image);
+        q+=(ptrdiff_t) GetPixelChannels(image);
       }
       if (SyncAuthenticPixels(image,exception) == MagickFalse)
         break;
@@ -647,7 +620,46 @@ static Image *ReadPCXImage(const ImageInfo *image_info,ExceptionInfo *exception)
         }
     }
     if (image->storage_class == PseudoClass)
-      (void) SyncImage(image,exception);
+      {
+        if ((pcx_info.version == 5) ||
+            ((pcx_info.bits_per_pixel*pcx_info.planes) == 1))
+          {
+            /*
+              Initialize image colormap.
+            */
+            if (image->colors > 256)
+              ThrowPCXException(CorruptImageError,"ColormapExceeds256Colors");
+            if ((pcx_info.bits_per_pixel*pcx_info.planes) == 1)
+              {
+                /*
+                  Monochrome colormap.
+                */
+                image->colormap[0].red=(Quantum) 0;
+                image->colormap[0].green=(Quantum) 0;
+                image->colormap[0].blue=(Quantum) 0;
+                image->colormap[1].red=QuantumRange;
+                image->colormap[1].green=QuantumRange;
+                image->colormap[1].blue=QuantumRange;
+              }
+            else
+              if (image->colors > 16)
+                {
+                  /*
+                    256 color images have their color map at the end of the file.
+                  */
+                  pcx_info.colormap_signature=(unsigned char) ReadBlobByte(image);
+                  count=ReadBlob(image,3*image->colors,pcx_colormap);
+                  p=pcx_colormap;
+                  for (i=0; i < (ssize_t) image->colors; i++)
+                  {
+                    image->colormap[i].red=ScaleCharToQuantum(*p++);
+                    image->colormap[i].green=ScaleCharToQuantum(*p++);
+                    image->colormap[i].blue=ScaleCharToQuantum(*p++);
+                  }
+              }
+          }
+        (void) SyncImage(image,exception);
+      }
     scanline=(unsigned char *) RelinquishMagickMemory(scanline);
     pixel_info=RelinquishVirtualMemory(pixel_info);
     if (EOFBlob(image) != MagickFalse)
@@ -817,8 +829,10 @@ static MagickBooleanType PCXWritePixels(PCXInfo *pcx_info,
   {
     if (pcx_info->encoding == 0)
       {
-        for (x=0; x < (ssize_t) pcx_info->bytes_per_line; x++)
-          (void) WriteBlobByte(image,(unsigned char) (*q++));
+        if (WriteBlob(image,(size_t) pcx_info->bytes_per_line,q) !=
+            (ssize_t) pcx_info->bytes_per_line)
+          return(MagickFalse);
+        q+=pcx_info->bytes_per_line;
       }
     else
       {
@@ -835,18 +849,22 @@ static MagickBooleanType PCXWritePixels(PCXInfo *pcx_info,
           if ((count > 1) || ((previous & 0xc0) == 0xc0))
             {
               count|=0xc0;
-              (void) WriteBlobByte(image,(unsigned char) count);
+              if (WriteBlobByte(image,(unsigned char) count) != 1)
+                return(MagickFalse);
             }
-          (void) WriteBlobByte(image,previous);
+          if (WriteBlobByte(image,previous) != 1)
+            return(MagickFalse);
           previous=packet;
           count=1;
         }
         if ((count > 1) || ((previous & 0xc0) == 0xc0))
           {
             count|=0xc0;
-            (void) WriteBlobByte(image,(unsigned char) count);
+            if (WriteBlobByte(image,(unsigned char) count) != 1)
+              return(MagickFalse);
           }
-        (void) WriteBlobByte(image,previous);
+        if (WriteBlobByte(image,previous) != 1)
+          return(MagickFalse);
       }
   }
   return (MagickTrue);
@@ -932,37 +950,45 @@ static MagickBooleanType WritePCXImage(const ImageInfo *image_info,Image *image,
     pcx_info.encoding=image_info->compression == NoCompression ? 0 : 1;
     pcx_info.bits_per_pixel=8;
     if ((image->storage_class == PseudoClass) &&
-        (SetImageMonochrome(image,exception) != MagickFalse))
-      pcx_info.bits_per_pixel=1;
-    else
-      if (IssRGBCompatibleColorspace(image->colorspace) == MagickFalse)
+        (SetImageMonochrome(image,exception) != MagickFalse || image->colors <= 16))
+          pcx_info.bits_per_pixel=1;
+    else if (IssRGBCompatibleColorspace(image->colorspace) == MagickFalse)
         (void) TransformImageColorspace(image,sRGBColorspace,exception);
     pcx_info.left=0;
+    if ((image->page.x > 0) && (image->page.x <= MAGICK_USHORT_MAX) &&
+        (image->columns <= (size_t) MAGICK_USHORT_MAX+1UL-
+          (size_t) image->page.x))
+      pcx_info.left=(unsigned short) image->page.x;
     pcx_info.top=0;
-    pcx_info.right=(unsigned short) (image->columns-1);
-    pcx_info.bottom=(unsigned short) (image->rows-1);
+    if ((image->page.y > 0) && (image->page.y <= MAGICK_USHORT_MAX) &&
+        (image->rows <= (size_t) MAGICK_USHORT_MAX+1UL-
+          (size_t) image->page.y))
+      pcx_info.top=(unsigned short) image->page.y;
+    pcx_info.right=(unsigned short) (pcx_info.left+image->columns-1);
+    pcx_info.bottom=(unsigned short) (pcx_info.top+image->rows-1);
     switch (image->units)
     {
       case UndefinedResolution:
       case PixelsPerInchResolution:
       default:
       {
-        pcx_info.horizontal_resolution=(unsigned short) image->resolution.x;
-        pcx_info.vertical_resolution=(unsigned short) image->resolution.y;
+        pcx_info.horizontal_resolution=CastDoubleToUShort(image->resolution.x);
+        pcx_info.vertical_resolution=CastDoubleToUShort(image->resolution.y);
         break;
       }
       case PixelsPerCentimeterResolution:
       {
-        pcx_info.horizontal_resolution=(unsigned short)
-          (2.54*image->resolution.x+0.5);
-        pcx_info.vertical_resolution=(unsigned short)
-          (2.54*image->resolution.y+0.5);
+        pcx_info.horizontal_resolution=CastDoubleToUShort(2.54*image->resolution.x+0.5);
+        pcx_info.vertical_resolution=CastDoubleToUShort(2.54*image->resolution.y+0.5);
         break;
       }
     }
     pcx_info.reserved=0;
     pcx_info.planes=1;
-    if ((image->storage_class == DirectClass) || (image->colors > 256))
+    if ((image->storage_class == PseudoClass) && (image->colors <= 16) &&
+        (image->type != BilevelType))
+      pcx_info.planes=4;
+    else if ((image->storage_class == DirectClass) || (image->colors > 256))
       {
         pcx_info.planes=3;
         if (image->alpha_trait != UndefinedPixelTrait)
@@ -1008,17 +1034,16 @@ static MagickBooleanType WritePCXImage(const ImageInfo *image_info,Image *image,
     if ((image->storage_class == PseudoClass) && (image->colors <= 256))
       for (i=0; i < (ssize_t) image->colors; i++)
       {
-        *q++=ScaleQuantumToChar(image->colormap[i].red);
-        *q++=ScaleQuantumToChar(image->colormap[i].green);
-        *q++=ScaleQuantumToChar(image->colormap[i].blue);
+        *q++=ScaleQuantumToChar((Quantum) image->colormap[i].red);
+        *q++=ScaleQuantumToChar((Quantum) image->colormap[i].green);
+        *q++=ScaleQuantumToChar((Quantum) image->colormap[i].blue);
       }
     (void) WriteBlob(image,3*16,(const unsigned char *) pcx_colormap);
     (void) WriteBlobByte(image,pcx_info.reserved);
     (void) WriteBlobByte(image,pcx_info.planes);
     (void) WriteBlobLSBShort(image,pcx_info.bytes_per_line);
     (void) WriteBlobLSBShort(image,pcx_info.palette_info);
-    for (i=0; i < 58; i++)
-      (void) WriteBlobByte(image,'\0');
+    (void) WriteBlobPadding(image,58,'\0');
     length=(size_t) pcx_info.bytes_per_line;
     pixel_info=AcquireVirtualMemory(length,pcx_info.planes*sizeof(*pixels));
     if (pixel_info == (MemoryInfo *) NULL)
@@ -1050,7 +1075,7 @@ static MagickBooleanType WritePCXImage(const ImageInfo *image_info,Image *image,
                 for (x=0; x < (ssize_t) pcx_info.bytes_per_line; x++)
                 {
                   *q++=ScaleQuantumToChar(GetPixelRed(image,p));
-                  p+=GetPixelChannels(image);
+                  p+=(ptrdiff_t) GetPixelChannels(image);
                 }
                 break;
               }
@@ -1059,7 +1084,7 @@ static MagickBooleanType WritePCXImage(const ImageInfo *image_info,Image *image,
                 for (x=0; x < (ssize_t) pcx_info.bytes_per_line; x++)
                 {
                   *q++=ScaleQuantumToChar(GetPixelGreen(image,p));
-                  p+=GetPixelChannels(image);
+                  p+=(ptrdiff_t) GetPixelChannels(image);
                 }
                 break;
               }
@@ -1068,7 +1093,7 @@ static MagickBooleanType WritePCXImage(const ImageInfo *image_info,Image *image,
                 for (x=0; x < (ssize_t) pcx_info.bytes_per_line; x++)
                 {
                   *q++=ScaleQuantumToChar(GetPixelBlue(image,p));
-                  p+=GetPixelChannels(image);
+                  p+=(ptrdiff_t) GetPixelChannels(image);
                 }
                 break;
               }
@@ -1078,14 +1103,17 @@ static MagickBooleanType WritePCXImage(const ImageInfo *image_info,Image *image,
                 for (x=(ssize_t) pcx_info.bytes_per_line; x != 0; x--)
                 {
                   *q++=ScaleQuantumToChar((Quantum) (GetPixelAlpha(image,p)));
-                  p+=GetPixelChannels(image);
+                  p+=(ptrdiff_t) GetPixelChannels(image);
                 }
                 break;
               }
             }
           }
           if (PCXWritePixels(&pcx_info,pixels,image) == MagickFalse)
-            break;
+            {
+              status=MagickFalse;
+              break;
+            }
           if (image->previous == (Image *) NULL)
             {
               status=SetImageProgress(image,SaveImageTag,(MagickOffsetType) y,
@@ -1107,10 +1135,13 @@ static MagickBooleanType WritePCXImage(const ImageInfo *image_info,Image *image,
             for (x=0; x < (ssize_t) image->columns; x++)
             {
               *q++=(unsigned char) ((ssize_t) GetPixelIndex(image,p));
-              p+=GetPixelChannels(image);
+              p+=(ptrdiff_t) GetPixelChannels(image);
             }
             if (PCXWritePixels(&pcx_info,pixels,image) == MagickFalse)
-              break;
+              {
+                status=MagickFalse;
+                break;
+              }
             if (image->previous == (Image *) NULL)
               {
                 status=SetImageProgress(image,SaveImageTag,(MagickOffsetType)
@@ -1118,6 +1149,57 @@ static MagickBooleanType WritePCXImage(const ImageInfo *image_info,Image *image,
                 if (status == MagickFalse)
                   break;
               }
+          }
+        else if (pcx_info.planes == 4)
+          {
+            const Quantum
+              *r;
+
+            unsigned char
+              bit,
+              byte;
+
+            for (y=0; y < (ssize_t) image->rows; y++)
+            {
+              p=GetVirtualPixels(image,0,y,image->columns,1,exception);
+              if (p == (const Quantum *) NULL)
+                break;
+              for (i=0; i < (ssize_t) pcx_info.planes; i++)
+              {
+                r=p;
+                byte=0;
+                bit=0;
+                q=pixels+(i*(ssize_t) pcx_info.bytes_per_line);
+                for (x=0; x < (ssize_t) image->columns; x++)
+                {
+                  bit<<=1;
+                  if (((ssize_t) GetPixelIndex(image,r) & ((ssize_t) 1 << i)) != 0)
+                    bit|=0x01;
+                  byte++;
+                  if (byte == 8)
+                    {
+                      *q++=bit;
+                      byte=0;
+                      bit=0;
+                    }
+                  r+=(ptrdiff_t) GetPixelChannels(image);
+                }
+                if (byte != 0)
+                  *q++=bit << (8-byte);
+              }
+              if (PCXWritePixels(&pcx_info,pixels,image) == MagickFalse)
+                {
+                  status=MagickFalse;
+                  break;
+                }
+              if (image->previous == (Image *) NULL)
+                {
+                  status=SetImageProgress(image,SaveImageTag,(MagickOffsetType) y,
+                    image->rows);
+                  if (status == MagickFalse)
+                    break;
+                }
+            }
           }
         else
           {
@@ -1148,12 +1230,15 @@ static MagickBooleanType WritePCXImage(const ImageInfo *image_info,Image *image,
                     bit=0;
                     byte=0;
                   }
-                p+=GetPixelChannels(image);
+                p+=(ptrdiff_t) GetPixelChannels(image);
               }
               if (bit != 0)
                 *q++=byte << (8-bit);
               if (PCXWritePixels(&pcx_info,pixels,image) == MagickFalse)
-                break;
+                {
+                  status=MagickFalse;
+                  break;
+                }
               if (image->previous == (Image *) NULL)
                 {
                   status=SetImageProgress(image,SaveImageTag,(MagickOffsetType)
@@ -1169,6 +1254,8 @@ static MagickBooleanType WritePCXImage(const ImageInfo *image_info,Image *image,
     pixel_info=RelinquishVirtualMemory(pixel_info);
     pcx_colormap=(unsigned char *) RelinquishMagickMemory(pcx_colormap);
     if (page_table == (MagickOffsetType *) NULL)
+      break;
+    if (status == MagickFalse)
       break;
     if (GetNextImageInList(image) == (Image *) NULL)
       break;

@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -68,7 +68,7 @@
 %
 %  The format of the AppendImageToList method is:
 %
-%      AppendImageToList(Image *images,const Image *image)
+%      void AppendImageToList(Image **images,const Image *append)
 %
 %  A description of each parameter follows:
 %
@@ -219,15 +219,14 @@ MagickExport Image *CloneImages(const Image *images,const char *scenes,
     *clone_images,
     *image;
 
-  ssize_t
-    i;
-
   size_t
     length;
 
   ssize_t
     first,
+    i,
     last,
+    offset,
     step;
 
   assert(images != (const Image *) NULL);
@@ -249,6 +248,7 @@ MagickExport Image *CloneImages(const Image *images,const char *scenes,
     while ((isspace((int) ((unsigned char) *p)) != 0) || (*p == ','))
       p++;
     first=(ssize_t) strtol(p,&p,10);
+    offset=first;
     if (first < 0)
       first+=(ssize_t) length;
     else
@@ -294,7 +294,7 @@ MagickExport Image *CloneImages(const Image *images,const char *scenes,
       }
       if (match == MagickFalse)
         (void) ThrowMagickException(exception,GetMagickModule(),OptionError,
-          "InvalidImageIndex","`%s'",images->filename);
+          "InvalidImageIndex","%g `%s'",(double) offset,images->filename);
     }
   }
   return(GetFirstImageInList(clone_images));
@@ -316,7 +316,7 @@ MagickExport Image *CloneImages(const Image *images,const char *scenes,
 %
 %  The format of the DeleteImageFromList method is:
 %
-%      DeleteImageFromList(Image **images)
+%      void DeleteImageFromList(Image **images)
 %
 %  A description of each parameter follows:
 %
@@ -357,7 +357,7 @@ MagickExport void DeleteImageFromList(Image **images)
 %
 %  The format of the DeleteImages method is:
 %
-%      DeleteImages(Image **images,const char *scenes,ExceptionInfo *exception)
+%      void DeleteImages(Image **images,const char *scenes,ExceptionInfo *exception)
 %
 %  A description of each parameter follows:
 %
@@ -914,7 +914,7 @@ MagickExport Image **ImageListToArray(const Image *images,
 %
 %  The format of the InsertImageInList method is:
 %
-%      InsertImageInList(Image **images,Image *insert)
+%      void InsertImageInList(Image **images,Image *insert)
 %
 %  A description of each parameter follows:
 %
@@ -979,7 +979,7 @@ MagickExport Image *NewImageList(void)
 %
 %  The format of the PrependImageToList method is:
 %
-%      PrependImageToList(Image *images,Image *image)
+%      void PrependImageToList(Image **images,Image *prepend)
 %
 %  A description of each parameter follows:
 %
@@ -1178,7 +1178,7 @@ MagickExport Image *RemoveLastImageFromList(Image **images)
 %
 %  The format of the ReplaceImageInList method is:
 %
-%      ReplaceImageInList(Image **images,Image *replace)
+%      void ReplaceImageInList(Image **images,Image *replace)
 %
 %  A description of each parameter follows:
 %
@@ -1239,7 +1239,7 @@ MagickExport void ReplaceImageInList(Image **images,Image *replace)
 %
 %  The format of the ReplaceImageInList method is:
 %
-%      ReplaceImageInListReturnLast(Image **images,Image *replace)
+%      void ReplaceImageInListReturnLast(Image **images,Image *replace)
 %
 %  A description of each parameter follows:
 %
@@ -1328,6 +1328,163 @@ MagickExport void ReverseImageList(Image **images)
 }
 
 /*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+%                                                                            %
+%                                                                            %
+%   S h u f f l e I m a g e s                                                %
+%                                                                            %
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  ShuffleImages() reorders the sequence of images in an image list based on
+%  ascending, descending, or random mode.
+%
+%  The format of the ShuffleImages method is:
+%
+%      Image *ShuffleImages(Image **images,const ShuffleMode mode,
+%        ExceptionInfo *exception)
+%
+%  A description of each parameter follows:
+%
+%    o images: the image list.
+%
+%    o mode: the shuffle mode (ascending, descending, random).
+%
+%    o exception: return any errors or warnings in this structure.
+%
+*/
+MagickExport Image *ShuffleImages(Image **images,const ShuffleMode mode,
+  ExceptionInfo *exception)
+{
+  Image
+    **image_array;
+
+  RandomInfo
+    *random_info;
+
+  size_t
+    number_images;
+
+  ssize_t
+    i;
+
+  assert(images != (Image **) NULL);
+  if (*images == (Image *) NULL)
+    return((Image *) NULL);
+  if ((*images)->next == (Image *) NULL)
+    return(*images);
+  number_images=GetImageListLength(*images);
+  if (number_images == 0)
+    return((Image *) NULL);
+  image_array=(Image **) AcquireQuantumMemory(number_images,
+    sizeof(*image_array));
+  if (image_array == (Image **) NULL)
+    {
+      ThrowMagickException(exception,GetMagickModule(),ResourceLimitError,
+        "MemoryAllocationFailed","%s",exception->reason);
+      return((Image *) NULL);
+    }
+  {
+    Image
+      *image;
+
+    ssize_t
+      j;
+
+    image=(*images);
+    for (j=0; j < (ssize_t) number_images; j++)
+    {
+      image_array[j]=image;
+      image=image->next;
+    }
+  }
+  switch (mode)
+  {
+    case AscendingShuffle:
+    {
+      ssize_t
+        j;
+
+      for (i=0; i < (ssize_t) (number_images-1); i++)
+      {
+        for (j=i+1; j < (ssize_t) number_images; j++)
+        {
+          if (LocaleCompare(image_array[j]->filename,image_array[i]->filename) < 0)
+            {
+              Image
+                *swap;
+
+              swap=image_array[i];
+              image_array[i]=image_array[j];
+              image_array[j]=swap;
+            }
+        }
+      }
+      break;
+    }
+    case DescendingShuffle:
+    {
+      ssize_t
+        j;
+
+      for (i=0; i < (ssize_t) (number_images-1); i++)
+      {
+        for (j=i+1; j < (ssize_t) number_images; j++)
+        {
+          if (LocaleCompare(image_array[j]->filename,image_array[i]->filename) > 0)
+            {
+              Image
+                *swap;
+
+              swap=image_array[i];
+              image_array[i]=image_array[j];
+              image_array[j]=swap;
+            }
+        }
+      }
+      break;
+    }
+    case RandomShuffle:
+    {
+      random_info=AcquireRandomInfo();
+      for (i=(ssize_t) number_images-1; i > 0; i--)
+      {
+        ssize_t
+          j;
+
+        j=(ssize_t) (GetPseudoRandomValue(random_info)*(i+1));
+        if (j > i)
+          j=i;
+        {
+          Image
+            *swap;
+
+          swap=image_array[i];
+          image_array[i]=image_array[j];
+          image_array[j]=swap;
+        }
+      }
+      random_info=DestroyRandomInfo(random_info);
+      break;
+    }
+    case UndefinedShuffle:
+    default:
+      break;
+  }
+  *images=image_array[0];
+  (*images)->previous=(Image *) NULL;
+  for (i=0; i < (ssize_t) number_images; i++)
+  {
+    image_array[i]->next=(i < (ssize_t) number_images-1) ?
+      image_array[i+1] : (Image *) NULL;
+    image_array[i]->previous=(i > 0) ? image_array[i-1] : (Image *) NULL;
+  }
+  image_array=(Image **) RelinquishMagickMemory(image_array);
+  return(*images);
+}
+
+/*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %
 %                                                                             %
@@ -1343,7 +1500,7 @@ MagickExport void ReverseImageList(Image **images)
 %
 %  The format of the SpliceImageIntoList method is:
 %
-%      SpliceImageIntoList(Image **images,const size_t,
+%      Image *SpliceImageIntoList(Image **images,const size_t,
 %        const Image *splice)
 %
 %  A description of each parameter follows:

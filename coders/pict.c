@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -475,6 +475,11 @@ static unsigned char *DecodeImage(Image *blob,Image *image,
       for (y=0; y < (ssize_t) image->rows; y++)
       {
         q=pixels+y*(ssize_t) width*(ssize_t) GetPixelChannels(image);
+        if (q < pixels)
+          {
+            status=MagickFalse;
+            break;
+          }
         number_pixels=bytes_per_line;
         count=ReadBlob(blob,(size_t) number_pixels,scanline);
         if (count != (ssize_t) number_pixels)
@@ -501,7 +506,12 @@ static unsigned char *DecodeImage(Image *blob,Image *image,
   for (y=0; y < (ssize_t) image->rows; y++)
   {
     q=pixels+y*(ssize_t) width;
-    if (bytes_per_line > 200)
+    if (q < pixels)
+      {
+        status=MagickFalse;
+        break;
+      }
+    if (bytes_per_line > 250)
       scanline_length=ReadBlobMSBShort(blob);
     else
       scanline_length=(size_t) ReadBlobByte(blob);
@@ -525,7 +535,7 @@ static unsigned char *DecodeImage(Image *blob,Image *image,
             &number_pixels);
           if ((size_t) (q-pixels+(ssize_t) number_pixels) <= *extent)
             (void) memcpy(q,p,(size_t) number_pixels);
-          q+=number_pixels;
+          q+=(ptrdiff_t) number_pixels;
           j+=(ssize_t) (length*bytes_per_pixel+1);
         }
       else
@@ -538,7 +548,7 @@ static unsigned char *DecodeImage(Image *blob,Image *image,
           {
             if ((size_t) (q-pixels+(ssize_t) number_pixels) <= *extent)
               (void) memcpy(q,p,(size_t) number_pixels);
-            q+=number_pixels;
+            q+=(ptrdiff_t) number_pixels;
           }
           j+=(ssize_t) bytes_per_pixel+1;
         }
@@ -691,7 +701,7 @@ static size_t EncodeImage(Image *image,const unsigned char *scanline,
     Write the number of and the packed length.
   */
   length=(size_t) (q-pixels);
-  if (bytes_per_line > 200)
+  if (bytes_per_line > 250)
     {
       (void) WriteBlobMSBShort(image,(unsigned short) length);
       length+=2;
@@ -796,7 +806,8 @@ static MagickBooleanType ReadPixmap(Image *image,PICTPixmap *pixmap)
   pixmap->reserved=ReadBlobMSBLong(image);
   if ((EOFBlob(image) != MagickFalse) || (pixmap->bits_per_pixel <= 0) ||
       (pixmap->bits_per_pixel > 32) || (pixmap->component_count <= 0) ||
-      (pixmap->component_count > 4) || (pixmap->component_size <= 0))
+      (pixmap->component_count > 4) || (pixmap->component_size <= 0) ||
+      (pixmap->component_size > 32))
     return(MagickFalse);
   return(MagickTrue);
 }
@@ -829,7 +840,6 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
 }
 
   char
-    geometry[MagickPathExtent],
     header_ole[4];
 
   Image
@@ -846,6 +856,10 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
   MagickBooleanType
     jpeg,
     status;
+
+  MagickSizeType
+    blob_size,
+    size;
 
   PICTRectangle
     frame;
@@ -904,16 +918,25 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
   /*
     Skip header : 512 for standard PICT and 4, ie "PICT" for OLE2.
   */
-  header_ole[0]=ReadBlobByte(image);
-  header_ole[1]=ReadBlobByte(image);
-  header_ole[2]=ReadBlobByte(image);
-  header_ole[3]=ReadBlobByte(image);
-  if (!((header_ole[0] == 0x50) && (header_ole[1] == 0x49) &&
-      (header_ole[2] == 0x43) && (header_ole[3] == 0x54 )))
-    for (i=0; i < 508; i++)
-      if (ReadBlobByte(image) == EOF)
-        break;
-  (void) ReadBlobMSBShort(image);  /* skip picture size */
+  header_ole[0]=(char) ReadBlobByte(image);
+  header_ole[1]=(char) ReadBlobByte(image);
+  size=(((MagickSizeType) header_ole[0]) << 8) | (MagickSizeType) header_ole[1];
+  blob_size=GetBlobSize(image);
+  /*
+    This is a special case where the PICT file directly starts with the picture size.
+  */
+  if ((blob_size % ((MagickSizeType) 65536)) != size)
+    {
+      char
+        buffer[508];
+
+      header_ole[2]=(char) ReadBlobByte(image);
+      header_ole[3]=(char) ReadBlobByte(image);
+      if (!((header_ole[0] == 0x50) && (header_ole[1] == 0x49) &&
+          (header_ole[2] == 0x43) && (header_ole[3] == 0x54 )))
+        ReadBlob(image,sizeof(buffer),buffer);
+      (void) ReadBlobMSBShort(image);  /* skip picture size */
+    }
   if (ReadRectangle(image,&frame) == MagickFalse)
     ThrowPICTException(CorruptImageError,"ImproperImageHeader");
   while ((c=ReadBlobByte(image)) == 0) ;
@@ -1084,7 +1107,7 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
 
                 if (EOFBlob(image) != MagickFalse)
                   break;
-                if (length > 200)
+                if (length > 250)
                   scanline_length=ReadBlobMSBShort(image);
                 else
                   scanline_length=(size_t) ReadBlobByte(image);
@@ -1256,6 +1279,9 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
                   if (ReadBlobByte(image) == EOF)
                     break;
               }
+            if (((MagickSizeType) tile_image->rows*tile_image->columns/8) > GetBlobSize(image))
+              ThrowPICTException(CorruptImageError,
+                "InsufficientImageDataInFile");
             if ((code != 0x9a) && (code != 0x9b) &&
                 (bytes_per_line & 0x8000) == 0)
               pixels=DecodeImage(image,tile_image,(size_t) bytes_per_line,1,
@@ -1288,11 +1314,11 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
                       *p,exception);
                     SetPixelIndex(tile_image,index,q);
                     SetPixelRed(tile_image,
-                      tile_image->colormap[(ssize_t) index].red,q);
+                      (Quantum) tile_image->colormap[(ssize_t) index].red,q);
                     SetPixelGreen(tile_image,
-                      tile_image->colormap[(ssize_t) index].green,q);
+                      (Quantum) tile_image->colormap[(ssize_t) index].green,q);
                     SetPixelBlue(tile_image,
-                      tile_image->colormap[(ssize_t) index].blue,q);
+                      (Quantum) tile_image->colormap[(ssize_t) index].blue,q);
                   }
                 else
                   {
@@ -1335,14 +1361,15 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
                         }
                   }
                 p++;
-                q+=GetPixelChannels(tile_image);
+                q+=(ptrdiff_t) GetPixelChannels(tile_image);
               }
               if (SyncAuthenticPixels(tile_image,exception) == MagickFalse)
                 break;
               if ((tile_image->storage_class == DirectClass) &&
                   (pixmap.bits_per_pixel != 16))
                 {
-                  p+=(pixmap.component_count-1)*(ssize_t) tile_image->columns;
+                  p+=(ptrdiff_t) (pixmap.component_count-1)*(ssize_t)
+                    tile_image->columns;
                   if (p < pixels)
                     break;
                 }
@@ -1355,9 +1382,24 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
             if ((jpeg == MagickFalse) && (EOFBlob(image) == MagickFalse))
               if ((code == 0x9a) || (code == 0x9b) ||
                   ((bytes_per_line & 0x8000) != 0))
+                {
+                  if ((source.right-source.left) != (destination.right-destination.left) ||
+                      (source.bottom-source.top) != (destination.bottom-destination.top))
+                    {
+                      Image *clone_image = tile_image;
+                      tile_image=ResizeImage(clone_image,(size_t)
+                        (destination.right-destination.left),(size_t)
+                        (destination.bottom-destination.top),UndefinedFilter,
+                        exception);
+                      if (tile_image == (Image *) NULL)
+                        tile_image=clone_image;
+                      else
+                        clone_image=DestroyImage(clone_image);
+                    }
                 (void) CompositeImage(image,tile_image,CopyCompositeOp,
                   MagickTrue,(ssize_t) destination.left,(ssize_t)
                   destination.top,exception);
+              }
             tile_image=DestroyImage(tile_image);
             break;
           }
@@ -1483,9 +1525,6 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
           }
         if (tile_image == (Image *) NULL)
           continue;
-        (void) FormatLocaleString(geometry,MagickPathExtent,"%.20gx%.20g",
-          (double) MagickMax(image->columns,tile_image->columns),
-          (double) MagickMax(image->rows,tile_image->rows));
         (void) SetImageExtent(image,
           MagickMax(image->columns,tile_image->columns),
           MagickMax(image->rows,tile_image->rows),exception);
@@ -1981,11 +2020,11 @@ static MagickBooleanType WritePICTImage(const ImageInfo *image_info,
       {
         (void) WriteBlobMSBShort(image,(unsigned short) i);
         (void) WriteBlobMSBShort(image,ScaleQuantumToShort(
-          image->colormap[i].red));
+          (Quantum) image->colormap[i].red));
         (void) WriteBlobMSBShort(image,ScaleQuantumToShort(
-          image->colormap[i].green));
+          (Quantum) image->colormap[i].green));
         (void) WriteBlobMSBShort(image,ScaleQuantumToShort(
-          image->colormap[i].blue));
+          (Quantum) image->colormap[i].blue));
       }
     }
   /*
@@ -2013,7 +2052,7 @@ static MagickBooleanType WritePICTImage(const ImageInfo *image_info,
       for (x=0; x < (ssize_t) image->columns; x++)
       {
         scanline[x]=(unsigned char) ((ssize_t) GetPixelIndex(image,p));
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
       }
       count+=EncodeImage(image,scanline,(size_t) (row_bytes & 0x7FFF),
         packed_scanline);
@@ -2067,7 +2106,7 @@ static MagickBooleanType WritePICTImage(const ImageInfo *image_info,
             *blue++=ScaleQuantumToChar(GetPixelBlue(image,p));
             if (image->alpha_trait != UndefinedPixelTrait)
               *opacity++=ScaleQuantumToChar((Quantum) (GetPixelAlpha(image,p)));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           count+=EncodeImage(image,scanline,bytes_per_line,packed_scanline);
           if (image->previous == (Image *) NULL)

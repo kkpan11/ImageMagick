@@ -1,11 +1,11 @@
 /*
-  Copyright @ 2018 ImageMagick Studio LLC, a non-profit organization
+  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization
   dedicated to making software imaging solutions freely available.
 
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,6 +21,7 @@
 */
 #include "coders/aai.h"
 #include "coders/art.h"
+#include "coders/ase.h"
 #include "coders/ashlar.h"
 #include "coders/avs.h"
 #include "coders/bayer.h"
@@ -38,12 +39,16 @@
 #include "coders/cmyk.h"
 #include "coders/cube.h"
 #include "coders/cut.h"
+#include "coders/c2pa.h"
 #include "coders/dcm.h"
 #include "coders/dds.h"
 #include "coders/debug.h"
 #include "coders/dib.h"
 #if defined(MAGICKCORE_DJVU_DELEGATE)
   #include "coders/djvu.h"
+#endif
+#if defined(MAGICKCORE_DMR_DELEGATE)
+  #include "coders/dmr.h"
 #endif
 #include "coders/dng.h"
 #if defined(MAGICKCORE_GVC_DELEGATE)
@@ -150,6 +155,7 @@
 #include "coders/scr.h"
 #include "coders/screenshot.h"
 #include "coders/sct.h"
+#include "coders/sf3.h"
 #include "coders/sfw.h"
 #include "coders/sgi.h"
 #include "coders/sixel.h"
@@ -180,6 +186,7 @@
 #include "coders/video.h"
 #include "coders/viff.h"
 #include "coders/vips.h"
+#include "coders/wbinfo.h"
 #include "coders/wbmp.h"
 #if defined(MAGICKCORE_WEBP_DELEGATE)
   #include "coders/webp.h"

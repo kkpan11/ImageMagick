@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,11 +18,7 @@
 #ifndef MAGICKCORE_STUDIO_H
 #define MAGICKCORE_STUDIO_H
 
-#if defined(__cplusplus) || defined(c_plusplus)
-extern "C" {
-#endif
-
-#if defined(WIN32) || defined(WIN64)
+#if defined(WIN32) || defined(WIN64) || defined(_WIN32_WINNT)
 #  define MAGICKCORE_WINDOWS_SUPPORT
 #else
 #  define MAGICKCORE_POSIX_SUPPORT
@@ -45,6 +41,15 @@ extern "C" {
 # if defined(__cplusplus) || defined(c_plusplus)
 #  undef inline
 # endif
+#endif
+
+#if defined(_OPENMP) && ((_OPENMP >= 200203) || defined(__OPENCC__))
+#  include <omp.h>
+#  define MAGICKCORE_OPENMP_SUPPORT  1
+#endif
+
+#if defined(__cplusplus) || defined(c_plusplus)
+extern "C" {
 #endif
 
 #if defined(MAGICKCORE_NAMESPACE_PREFIX)
@@ -153,11 +158,6 @@ extern "C" {
 #  define MAGICKCORE_OPENCL_SUPPORT  1
 #endif
 
-#if defined(_OPENMP) && ((_OPENMP >= 200203) || defined(__OPENCC__))
-#  include <omp.h>
-#  define MAGICKCORE_OPENMP_SUPPORT  1
-#endif
-
 #if defined(MAGICKCORE_HAVE_PREAD) && defined(MAGICKCORE_HAVE_DECL_PREAD) && !MAGICKCORE_HAVE_DECL_PREAD
 ssize_t pread(int,void *,size_t,off_t);
 #endif
@@ -233,11 +233,14 @@ extern int vsnprintf(char *,size_t,const char *,va_list);
 # include "MagickCore/magick-type.h"
 #endif
 
-#if defined(S_IRUSR) && defined(S_IWUSR)
-# define S_MODE (S_IRUSR | S_IWUSR)
-#elif defined (MAGICKCORE_WINDOWS_SUPPORT)
+#if defined (MAGICKCORE_WINDOWS_SUPPORT) || defined(__MINGW32__)
+# define P_MODE (_S_IREAD | _S_IWRITE)
 # define S_MODE (_S_IREAD | _S_IWRITE)
+#elif defined(MAGICKCORE_POSIX_SUPPORT)
+# define P_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)
+# define S_MODE (S_IRUSR | S_IWUSR)
 #else
+# define P_MODE  0666
 # define S_MODE  0600
 #endif
 
@@ -276,7 +279,7 @@ extern int vsnprintf(char *,size_t,const char *,va_list);
 #  define Exit  exit
 #  define IsBasenameSeparator(c) \
   (((c) == ']') || ((c) == ':') || ((c) == '/') ? MagickTrue : MagickFalse)
-#  define MAGICKCORE_LIBRARY_PATH  "sys$login:"
+#  define MAGICKCORE_LIBRARY_ABSOLUTE_PATH  "sys$login:"
 #  define MAGICKCORE_SHARE_PATH  "sys$login:"
 #  define X11_PREFERENCES_PATH  "decw$user_defaults:"
 #  define ProcessPendingEvents(text)
@@ -324,8 +327,24 @@ extern int vsnprintf(char *,size_t,const char *,va_list);
 #define O_BINARY  0x00
 #endif
 
+#if !defined(O_CLOEXEC)
+#if defined(_WIN32) || defined(_WIN64)
+#  define O_CLOEXEC _O_NOINHERIT
+#else
+#define O_CLOEXEC 0
+#endif
+#endif
+
+#if !defined(O_NOFOLLOW)
+#define O_NOFOLLOW 0
+#endif
+
 #if !defined(PATH_MAX)
 #define PATH_MAX  4096
+#endif
+
+#if !defined(TMP_MAX)
+# define TMP_MAX  238328
 #endif
 
 #if defined(MAGICKCORE_LTDL_DELEGATE) || (defined(MAGICKCORE_WINDOWS_SUPPORT) && defined(_DLL) && !defined(_LIB))

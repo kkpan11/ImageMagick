@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -94,6 +94,7 @@ ModuleExport size_t RegisterTHUMBNAILImage(void)
 
   entry=AcquireMagickInfo("THUMBNAIL","THUMBNAIL","EXIF Profile Thumbnail");
   entry->encoder=(EncodeImageHandler *) WriteTHUMBNAILImage;
+  entry->flags^=CoderBlobSupportFlag;
   (void) RegisterMagickInfo(entry);
   return(MagickImageCoderSignature);
 }
@@ -185,13 +186,15 @@ static MagickBooleanType WriteTHUMBNAILImage(const ImageInfo *image_info,
   profile=GetImageProfile(image,"exif");
   if (profile == (const StringInfo *) NULL)
     ThrowWriterException(CoderError,"ImageDoesNotHaveAThumbnail");
-  property=GetImageProperty(image,"exif:JPEGInterchangeFormat",exception);
+  property=GetImageProperty(image,"exif:Thumbnail.JPEGInterchangeFormat",
+    exception);
   if (property == (const char *) NULL)
     ThrowWriterException(CoderError,"ImageDoesNotHaveAThumbnail");
   offset=(ssize_t) StringToLong(property);
   if (offset < 0)
     ThrowWriterException(CoderError,"ImageDoesNotHaveAThumbnail");
-  property=GetImageProperty(image,"exif:JPEGInterchangeFormatLength",exception);
+  property=GetImageProperty(image,"exif:Thumbnail.JPEGInterchangeFormatLength",
+    exception);
   if (property == (const char *) NULL)
     ThrowWriterException(CoderError,"ImageDoesNotHaveAThumbnail");
   length=(size_t) StringToLong(property);
@@ -203,16 +206,20 @@ static MagickBooleanType WriteTHUMBNAILImage(const ImageInfo *image_info,
     q++;
   }
   if ((q > (GetStringInfoDatum(profile)+GetStringInfoLength(profile))) ||
-      ((ssize_t) length > (GetStringInfoDatum(profile)+GetStringInfoLength(profile)-q)))
+      (length > (size_t) (GetStringInfoDatum(profile)+GetStringInfoLength(profile)-q)))
     ThrowWriterException(CoderError,"ImageDoesNotHaveAThumbnail");
-  thumbnail_image=BlobToImage(image_info,q,length,exception);
+  write_info=CloneImageInfo(image_info);
+  *write_info->magick='\0';
+  thumbnail_image=BlobToImage(write_info,q,length,exception);
   if (thumbnail_image == (Image *) NULL)
-    return(MagickFalse);
+    {
+      write_info=DestroyImageInfo(write_info);
+      return(MagickFalse);
+    }
   (void) SetImageType(thumbnail_image,thumbnail_image->alpha_trait ==
     UndefinedPixelTrait ? TrueColorType : TrueColorAlphaType,exception);
   (void) CopyMagickString(thumbnail_image->filename,image->filename,
     MagickPathExtent);
-  write_info=CloneImageInfo(image_info);
   *write_info->magick='\0';
   (void) SetImageInfo(write_info,1,exception);
   magick_info=GetMagickInfo(write_info->magick,exception);

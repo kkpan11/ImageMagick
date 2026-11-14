@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -166,11 +166,11 @@ static Image *ReadUYVYImage(const ImageInfo *image_info,
       SetPixelRed(image,ScaleCharToQuantum(y1),q);
       SetPixelGreen(image,ScaleCharToQuantum(u),q);
       SetPixelBlue(image,ScaleCharToQuantum(v),q);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
       SetPixelRed(image,ScaleCharToQuantum(y2),q);
       SetPixelGreen(image,ScaleCharToQuantum(u),q);
       SetPixelBlue(image,ScaleCharToQuantum(v),q);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;
@@ -357,7 +357,7 @@ static MagickBooleanType WriteUYVYImage(const ImageInfo *image_info,
       pixel.green=(double) GetPixelGreen(uyvy_image,p);
       pixel.blue=(double) GetPixelBlue(uyvy_image,p);
       full=full == MagickFalse ? MagickTrue : MagickFalse;
-      p+=GetPixelChannels(uyvy_image);
+      p+=(ptrdiff_t) GetPixelChannels(uyvy_image);
     }
     status=SetImageProgress(image,LoadImageTag,(MagickOffsetType) y,
       image->rows);

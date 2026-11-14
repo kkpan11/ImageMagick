@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -193,7 +193,10 @@ static Image *ReadMACImage(const ImageInfo *image_info,ExceptionInfo *exception)
             {
               q=QueueAuthenticPixels(image,0,y,image->columns,1,exception);
               if (q == (Quantum *) NULL)
-                break;
+                {
+                  status=MagickFalse;
+                  break;
+                }
               p=pixels;
               bit=0;
               byte=0;
@@ -201,20 +204,25 @@ static Image *ReadMACImage(const ImageInfo *image_info,ExceptionInfo *exception)
               {
                 if (bit == 0)
                   byte=(*p++);
-                SetPixelIndex(image,((byte & 0x80) != 0 ? 0x01 : 0x00),q);
+                SetPixelIndex(image,(Quantum) ((byte & 0x80) != 0 ? 0x01 : 0x00),q);
                 bit++;
                 byte<<=1;
                 if (bit == 8)
                   bit=0;
-                q+=GetPixelChannels(image);
+                q+=(ptrdiff_t) GetPixelChannels(image);
               }
               if (SyncAuthenticPixels(image,exception) == MagickFalse)
-                break;
+                {
+                  status=MagickFalse;
+                  break;
+                }
               offset=0;
               p=pixels;
               y++;
             }
         }
+        if (status == MagickFalse)
+          break;
         continue;
       }
     count++;
@@ -228,7 +236,10 @@ static Image *ReadMACImage(const ImageInfo *image_info,ExceptionInfo *exception)
         {
           q=QueueAuthenticPixels(image,0,y,image->columns,1,exception);
           if (q == (Quantum *) NULL)
-            break;
+            {
+              status=MagickFalse;
+              break;
+            }
           p=pixels;
           bit=0;
           byte=0;
@@ -236,20 +247,25 @@ static Image *ReadMACImage(const ImageInfo *image_info,ExceptionInfo *exception)
           {
             if (bit == 0)
               byte=(*p++);
-            SetPixelIndex(image,((byte & 0x80) != 0 ? 0x01 : 0x00),q);
+            SetPixelIndex(image,(Quantum) ((byte & 0x80) != 0 ? 0x01 : 0x00),q);
             bit++;
             byte<<=1;
             if (bit == 8)
               bit=0;
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
           if (SyncAuthenticPixels(image,exception) == MagickFalse)
-            break;
+            {
+              status=MagickFalse;
+              break;
+            }
           offset=0;
           p=pixels;
           y++;
         }
     }
+    if (status == MagickFalse)
+      break;
   }
   pixels=(unsigned char *) RelinquishMagickMemory(pixels);
   (void) SyncImage(image,exception);

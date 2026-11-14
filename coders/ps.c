@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -50,6 +50,7 @@
 #include "MagickCore/colorspace.h"
 #include "MagickCore/colorspace-private.h"
 #include "MagickCore/constitute.h"
+#include "MagickCore/constitute-private.h"
 #include "MagickCore/delegate.h"
 #include "MagickCore/delegate-private.h"
 #include "MagickCore/draw.h"
@@ -78,6 +79,7 @@
 #include "MagickCore/token.h"
 #include "MagickCore/transform.h"
 #include "MagickCore/utility.h"
+#include "MagickCore/utility-private.h"
 #include "coders/bytebuffer-private.h"
 #include "coders/coders-private.h"
 #include "coders/ghostscript-private.h"
@@ -355,7 +357,7 @@ static void ReadPSInfo(const ImageInfo *image_info,Image *image,PSInfo *ps_info,
     if (CompareMagickByteBuffer(&buffer,ImageData,strlen(ImageData)) != MagickFalse)
       {
         p=GetMagickByteBufferDatum(&buffer);
-        (void) sscanf(p,ImageData " %lu %lu",&ps_info->columns,&ps_info->rows);
+        (void) MagickSscanf(p,ImageData " %lu %lu",&ps_info->columns,&ps_info->rows);
       }
     /*
       Is this a CMYK document?
@@ -409,7 +411,7 @@ static void ReadPSInfo(const ImageInfo *image_info,Image *image,PSInfo *ps_info,
           Note spot names.
         */
         (void) FormatLocaleString(property,MagickPathExtent,
-          "pdf:SpotColor-%.20g",(double) spotcolor++);
+          "pdf:SpotColor-%.17g",(double) spotcolor++);
         i=0;
         for (c=PeekMagickByteBuffer(&buffer); c != EOF; c=PeekMagickByteBuffer(&buffer))
         {
@@ -439,19 +441,22 @@ static void ReadPSInfo(const ImageInfo *image_info,Image *image,PSInfo *ps_info,
         */
         if (SkipMagickByteBufferUntilNewline(&buffer) != MagickFalse)
           {
-            ps_info->icc_profile=AcquireProfileStringInfo("icc",MagickPathExtent,
-              exception);
-            datum=GetStringInfoDatum(ps_info->icc_profile);
-            for (i=0; (c=ProfileInteger(&buffer,hex_digits)) != EOF; i++)
-            {
-              if (i >= (ssize_t) GetStringInfoLength(ps_info->icc_profile))
+            ps_info->icc_profile=AcquireProfileStringInfo("icc",
+              MagickPathExtent,exception);
+            if (ps_info->icc_profile != (StringInfo*) NULL)
+              {
+                datum=GetStringInfoDatum(ps_info->icc_profile);
+                for (i=0; (c=ProfileInteger(&buffer,hex_digits)) != EOF; i++)
                 {
-                  SetStringInfoLength(ps_info->icc_profile,(size_t) i << 1);
-                  datum=GetStringInfoDatum(ps_info->icc_profile);
+                  if (i >= (ssize_t) GetStringInfoLength(ps_info->icc_profile))
+                    {
+                      SetStringInfoLength(ps_info->icc_profile,(size_t) i << 1);
+                      datum=GetStringInfoDatum(ps_info->icc_profile);
+                    }
+                  datum[i]=(unsigned char) c;
                 }
-              datum[i]=(unsigned char) c;
-            }
-            SetStringInfoLength(ps_info->icc_profile,(size_t) i+1);
+                SetStringInfoLength(ps_info->icc_profile,(size_t) i);
+              }
           }
         continue;
       }
@@ -469,7 +474,7 @@ static void ReadPSInfo(const ImageInfo *image_info,Image *image,PSInfo *ps_info,
         */
         p=GetMagickByteBufferDatum(&buffer);
         extent=0;
-        count=(ssize_t) sscanf(p,PhotoshopProfile " %lu",&extent);
+        count=(ssize_t) MagickSscanf(p,PhotoshopProfile " %lu",&extent);
         if ((count != 1) || (extent == 0))
           continue;
         if ((MagickSizeType) extent > GetBlobSize(image))
@@ -479,16 +484,19 @@ static void ReadPSInfo(const ImageInfo *image_info,Image *image,PSInfo *ps_info,
           {
             ps_info->photoshop_profile=AcquireProfileStringInfo("8bim",
               length+1U,exception);
-            q=GetStringInfoDatum(ps_info->photoshop_profile);
-            while (extent > 0)
-            {
-              c=ProfileInteger(&buffer,hex_digits);
-              if (c == EOF)
-                break;
-              *q++=(unsigned char) c;
-              extent-=MagickMin(extent,1);
-            }
-            SetStringInfoLength(ps_info->photoshop_profile,length);
+            if (ps_info->photoshop_profile != (StringInfo*) NULL)
+              {
+                q=GetStringInfoDatum(ps_info->photoshop_profile);
+                while (extent > 0)
+                {
+                  c=ProfileInteger(&buffer,hex_digits);
+                  if (c == EOF)
+                    break;
+                  *q++=(unsigned char) c;
+                  extent-=MagickMin(extent,1);
+                }
+                SetStringInfoLength(ps_info->photoshop_profile,length);
+              }
           }
         continue;
       }
@@ -502,35 +510,35 @@ static void ReadPSInfo(const ImageInfo *image_info,Image *image,PSInfo *ps_info,
     if (CompareMagickByteBuffer(&buffer,BoundingBox,strlen(BoundingBox)) != MagickFalse)
       {
         p=GetMagickByteBufferDatum(&buffer);
-        count=(ssize_t) sscanf(p,BoundingBox " %lf %lf %lf %lf",
+        count=(ssize_t) MagickSscanf(p,BoundingBox " %lf %lf %lf %lf",
           &bounds.x1,&bounds.y1,&bounds.x2,&bounds.y2);
         i=2;
       }
     if (CompareMagickByteBuffer(&buffer,DocumentMedia,strlen(DocumentMedia)) != MagickFalse)
       {
         p=GetMagickByteBufferDatum(&buffer);
-        count=(ssize_t) sscanf(p,DocumentMedia " %lf %lf %lf %lf",
+        count=(ssize_t) MagickSscanf(p,DocumentMedia " %lf %lf %lf %lf",
           &bounds.x1,&bounds.y1,&bounds.x2,&bounds.y2);
         i=1;
       }
     if (CompareMagickByteBuffer(&buffer,HiResBoundingBox,strlen(HiResBoundingBox)) != MagickFalse)
       {
         p=GetMagickByteBufferDatum(&buffer);
-        count=(ssize_t) sscanf(p,HiResBoundingBox " %lf %lf %lf %lf",
+        count=(ssize_t) MagickSscanf(p,HiResBoundingBox " %lf %lf %lf %lf",
           &bounds.x1,&bounds.y1,&bounds.x2,&bounds.y2);
         i=3;
       }
     if (CompareMagickByteBuffer(&buffer,PageBoundingBox,strlen(PageBoundingBox)) != MagickFalse)
       {
         p=GetMagickByteBufferDatum(&buffer);
-        count=(ssize_t) sscanf(p,PageBoundingBox " %lf %lf %lf %lf",
+        count=(ssize_t) MagickSscanf(p,PageBoundingBox " %lf %lf %lf %lf",
           &bounds.x1,&bounds.y1,&bounds.x2,&bounds.y2);
         i=1;
       }
     if (CompareMagickByteBuffer(&buffer,PageMedia,strlen(PageMedia)) != MagickFalse)
       {
         p=GetMagickByteBufferDatum(&buffer);
-        count=(ssize_t) sscanf(p,PageMedia " %lf %lf %lf %lf",
+        count=(ssize_t) MagickSscanf(p,PageMedia " %lf %lf %lf %lf",
           &bounds.x1,&bounds.y1,&bounds.x2,&bounds.y2);
         i=1;
       }
@@ -665,9 +673,9 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   if (image_info->page != (char *) NULL)
     (void) ParseAbsoluteGeometry(image_info->page,&page);
   resolution=image->resolution;
-  page.width=(size_t) ((ssize_t) ceil((double) (page.width*resolution.x/
+  page.width=CastDoubleToSizeT(((double) (page.width*resolution.x/
     delta.x)-0.5));
-  page.height=(size_t) ((ssize_t) ceil((double) (page.height*resolution.y/
+  page.height=CastDoubleToSizeT(((double) (page.height*resolution.y/
     delta.y)-0.5));
   /*
     Determine page geometry from the Postscript bounding box.
@@ -683,9 +691,9 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
       (void) FormatImageProperty(image,"ps:HiResBoundingBox",
         "%gx%g%+.15g%+.15g",info.bounds.x2-info.bounds.x1,info.bounds.y2-
         info.bounds.y1,info.bounds.x1,info.bounds.y1);
-      page.width=(size_t) ((ssize_t) ceil((double) ((info.bounds.x2-
+      page.width=CastDoubleToSizeT(((double) ((info.bounds.x2-
         info.bounds.x1)*resolution.x/delta.x)-0.5));
-      page.height=(size_t) ((ssize_t) ceil((double) ((info.bounds.y2-
+      page.height=CastDoubleToSizeT(((double) ((info.bounds.y2-
         info.bounds.y1)*resolution.y/delta.y)-0.5));
     }
   fitPage=MagickFalse;
@@ -698,20 +706,19 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
       page_geometry=GetPageGeometry(option);
       flags=ParseMetaGeometry(page_geometry,&page.x,&page.y,&page.width,
         &page.height);
+      page_geometry=DestroyString(page_geometry);
       if (flags == NoValue)
         {
           (void) ThrowMagickException(exception,GetMagickModule(),OptionError,
             "InvalidGeometry","`%s'",option);
-          page_geometry=DestroyString(page_geometry);
           CleanupPSInfo(&info);
           image=DestroyImage(image);
           return((Image *) NULL);
         }
-      page.width=(size_t) ((ssize_t) ceil((double) (page.width*
+      page.width=CastDoubleToSizeT(((double) (page.width*
         image->resolution.x/delta.x)-0.5));
-      page.height=(size_t) ((ssize_t) ceil((double) (page.height*
+      page.height=CastDoubleToSizeT(((double) (page.height*
         image->resolution.y/delta.y) -0.5));
-      page_geometry=DestroyString(page_geometry);
       fitPage=MagickTrue;
     }
   crop=MagickFalse;
@@ -739,7 +746,7 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   (void) CopyMagickString(command,"/setpagedevice {pop} bind 1 index where {"
     "dup wcheck {3 1 roll put} {pop def} ifelse} {def} ifelse\n",
     MagickPathExtent);
-  count=write(file,command,(unsigned int) strlen(command));
+  count=MagickWrite(file,command,(unsigned int) strlen(command));
   if (image_info->page == (char *) NULL)
     {
       char
@@ -747,11 +754,11 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
 
       (void) FormatLocaleString(translate_geometry,MagickPathExtent,
         "%g %g translate\n",-info.bounds.x1,-info.bounds.y1);
-      count=write(file,translate_geometry,(unsigned int)
+      count=MagickWrite(file,translate_geometry,(unsigned int)
         strlen(translate_geometry));
     }
   (void) count;
-  file=close(file)-1;
+  file=close_utf8(file)-1;
   /*
     Render Postscript with the Ghostscript delegate.
   */
@@ -778,7 +785,7 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
       if (image_info->ping != MagickFalse)
         (void) FormatLocaleString(density,MagickPathExtent,"2.0x2.0");
       else
-        (void) FormatLocaleString(options,MagickPathExtent,"-g%.20gx%.20g ",
+        (void) FormatLocaleString(options,MagickPathExtent,"-g%.17gx%.17g ",
           (double) page.width,(double) page.height);
     }
   read_info=CloneImageInfo(image_info);
@@ -788,8 +795,8 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
       char
         pages[MagickPathExtent];
 
-      (void) FormatLocaleString(pages,MagickPathExtent,"-dFirstPage=%.20g "
-        "-dLastPage=%.20g ",(double) read_info->scene+1,(double)
+      (void) FormatLocaleString(pages,MagickPathExtent,"-dFirstPage=%.17g "
+        "-dLastPage=%.17g ",(double) read_info->scene+1,(double)
         (read_info->scene+read_info->number_scenes));
       (void) ConcatenateMagickString(options,pages,MagickPathExtent);
       read_info->number_scenes=0;
@@ -807,7 +814,6 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   (void) CopyMagickString(filename,read_info->filename,MagickPathExtent);
   (void) AcquireUniqueFilename(filename);
   (void) RelinquishUniqueFileResource(filename);
-  (void) ConcatenateMagickString(filename,"%d",MagickPathExtent);
   (void) FormatLocaleString(command,MagickPathExtent,
     GetDelegateCommands(delegate_info),
     read_info->antialias != MagickFalse ? 4 : 1,
@@ -818,8 +824,7 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   *message='\0';
   status=InvokeGhostscriptDelegate(read_info->verbose,command,message,
     exception);
-  (void) InterpretImageFilename(image_info,image,filename,1,
-    read_info->filename,exception);
+  (void) AppendImageFilenameScene(filename,1,read_info->filename);
   if ((status == MagickFalse) ||
       (IsGhostscriptRendered(read_info->filename) == MagickFalse))
     {
@@ -833,8 +838,7 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   if (status == MagickFalse)
     for (i=1; ; i++)
     {
-      (void) InterpretImageFilename(image_info,image,filename,(int) i,
-        read_info->filename,exception);
+      (void) AppendImageFilenameScene(filename,(int) i,read_info->filename);
       if (IsGhostscriptRendered(read_info->filename) == MagickFalse)
         break;
       (void) RelinquishUniqueFileResource(read_info->filename);
@@ -842,13 +846,12 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   else
     for (i=1; ; i++)
     {
-      (void) InterpretImageFilename(image_info,image,filename,(int) i,
-        read_info->filename,exception);
+      (void) AppendImageFilenameScene(filename,(int) i,read_info->filename);
       if (IsGhostscriptRendered(read_info->filename) == MagickFalse)
         break;
       read_info->blob=NULL;
       read_info->length=0;
-      next=ReadImage(read_info,exception);
+      next=ReadImageWithoutPostProcessing(read_info,exception);
       (void) RelinquishUniqueFileResource(read_info->filename);
       if (next == (Image *) NULL)
         break;
@@ -891,6 +894,8 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
       /*
         Add place holder images to meet the subimage specification requirement.
       */
+      if (AcquireMagickResource(ListLengthResource,image_info->scene) == MagickFalse)
+        ThrowReaderException(ResourceLimitError,"ListLengthExceedsLimit");
       for (i=0; i < (ssize_t) image_info->scene; i++)
       {
         clone_image=CloneImage(postscript_image,1,1,MagickTrue,exception);
@@ -1078,6 +1083,82 @@ static inline unsigned char *PopHexPixel(const char hex_digits[][3],
   *pixels++=(unsigned char) (*hex++ & 0xff);
   *pixels++=(unsigned char) (*hex & 0xff);
   return(pixels);
+}
+
+static inline void FilenameToTitle(const char *filename,char *title,
+  const size_t extent)
+{
+  int
+    depth = 0;
+
+  ssize_t
+    i,
+    offset = 0;
+
+  if (extent == 0)
+    return;
+  for (i=0; (filename[i] != '\0') && ((offset+1) < (ssize_t) extent); i++)
+  {
+    unsigned char
+      c = filename[i];
+
+    /*
+      Only allow printable ASCII.
+    */
+    if ((c < 32) || (c > 126))
+      {
+        title[offset++]='_';
+        continue;
+      }
+    /*
+      Percent signs break DSC parsing.
+    */
+    if (c == '%')
+      {
+        title[offset++]='_';
+        continue;
+      }
+    /*
+      Parentheses must remain balanced.
+    */
+    if (c == '(')
+      {
+        depth++;
+        title[offset++] = '(';
+        continue;
+      }
+    if (c == ')')
+      {
+        if (depth <= 0)
+          title[offset++]='_';
+        else
+          {
+            depth--;
+            title[offset++]=')';
+          }
+         continue;
+     }
+    /*
+      Everything else is allowed.
+    */
+    title[offset++]=c;
+  }
+  /*
+    If parentheses remain unbalanced, close them.
+  */
+  while ((depth > 0) && ((offset+1) < (ssize_t) extent)) {
+    title[offset++]=')';
+    depth--;
+  }
+  title[offset]='\0';
+  /*
+    Ensure non-empty result.
+  */
+  if (offset == 0)
+    {
+      (void) CopyMagickString(title,"Untitled",extent-1);
+      title[extent-1]='\0';
+    }
 }
 
 static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
@@ -1510,14 +1591,14 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
         resolution.y=(double) ((size_t) (100.0*2.54*resolution.y+0.5)/100.0);
       }
     SetGeometry(image,&geometry);
-    (void) FormatLocaleString(page_geometry,MagickPathExtent,"%.20gx%.20g",
+    (void) FormatLocaleString(page_geometry,MagickPathExtent,"%.17gx%.17g",
       (double) image->columns,(double) image->rows);
     if (image_info->page != (char *) NULL)
       (void) CopyMagickString(page_geometry,image_info->page,MagickPathExtent);
     else
       if ((image->page.width != 0) && (image->page.height != 0))
         (void) FormatLocaleString(page_geometry,MagickPathExtent,
-          "%.20gx%.20g%+.20g%+.20g",(double) image->page.width,(double)
+          "%.17gx%.17g%+.20g%+.20g",(double) image->page.width,(double)
           image->page.height,(double) image->page.x,(double) image->page.y);
       else
         if ((image->gravity != UndefinedGravity) &&
@@ -1527,10 +1608,10 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
     (void) ConcatenateMagickString(page_geometry,">",MagickPathExtent);
     (void) ParseMetaGeometry(page_geometry,&geometry.x,&geometry.y,
       &geometry.width,&geometry.height);
-    scale.x=PerceptibleReciprocal(resolution.x)*geometry.width*delta.x;
-    geometry.width=CastDoubleToUnsigned(scale.x+0.5);
-    scale.y=PerceptibleReciprocal(resolution.y)*geometry.height*delta.y;
-    geometry.height=CastDoubleToUnsigned(scale.y+0.5);
+    scale.x=MagickSafeReciprocal(resolution.x)*geometry.width*delta.x;
+    geometry.width=CastDoubleToSizeT(scale.x+0.5);
+    scale.y=MagickSafeReciprocal(resolution.y)*geometry.height*delta.y;
+    geometry.height=CastDoubleToSizeT(scale.y+0.5);
     (void) ParseAbsoluteGeometry(page_geometry,&media_info);
     (void) ParseGravityGeometry(image,page_geometry,&page_info,exception);
     if (image->gravity != UndefinedGravity)
@@ -1548,6 +1629,9 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
       text_size=(size_t) (MultilineCensus(value)*pointsize+12);
     if (page == 1)
       {
+        char
+          title[MagickPathExtent];
+
         /*
           Output Postscript header.
         */
@@ -1558,8 +1642,9 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
             MagickPathExtent);
         (void) WriteBlobString(image,buffer);
         (void) WriteBlobString(image,"%%Creator: (ImageMagick)\n");
+        FilenameToTitle(image->filename,title,MagickPathExtent);
         (void) FormatLocaleString(buffer,MagickPathExtent,"%%%%Title: (%s)\n",
-          image->filename);
+          title);
         (void) WriteBlobString(image,buffer);
         timer=GetMagickTime();
         (void) FormatMagickTime(timer,sizeof(date),date);
@@ -1577,7 +1662,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
         else
           {
             (void) FormatLocaleString(buffer,MagickPathExtent,
-              "%%%%BoundingBox: %.20g %.20g %.20g %.20g\n",ceil(bounds.x1-0.5),
+              "%%%%BoundingBox: %.17g %.17g %.17g %.17g\n",ceil(bounds.x1-0.5),
               ceil(bounds.y1-0.5),floor(bounds.x2+0.5),floor(bounds.y2+0.5));
             (void) WriteBlobString(image,buffer);
             (void) FormatLocaleString(buffer,MagickPathExtent,
@@ -1592,7 +1677,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
               Embed Photoshop profile.
             */
             (void) FormatLocaleString(buffer,MagickPathExtent,
-              "%%BeginPhotoshop: %.20g",(double) GetStringInfoLength(profile));
+              "%%BeginPhotoshop: %.17g",(double) GetStringInfoLength(profile));
             (void) WriteBlobString(image,buffer);
             for (i=0; i < (ssize_t) GetStringInfoLength(profile); i++)
             {
@@ -1621,7 +1706,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
             (void) WriteBlobString(image,"%%Orientation: Portrait\n");
             (void) WriteBlobString(image,"%%PageOrder: Ascend\n");
             (void) FormatLocaleString(buffer,MagickPathExtent,
-              "%%%%Pages: %.20g\n",image_info->adjoin != MagickFalse ?
+              "%%%%Pages: %.17g\n",image_info->adjoin != MagickFalse ?
               (double) number_scenes : 1.0);
             (void) WriteBlobString(image,buffer);
           }
@@ -1645,7 +1730,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
               Dump image as bitmap.
             */
             (void) FormatLocaleString(buffer,MagickPathExtent,
-              "%%%%BeginPreview: %.20g %.20g %.20g %.20g\n%%  ",(double)
+              "%%%%BeginPreview: %.17g %.17g %.17g %.17g\n%%  ",(double)
               preview_image->columns,(double) preview_image->rows,1.0,
               (double) ((((preview_image->columns+7) >> 3)*preview_image->rows+
               35)/36));
@@ -1731,11 +1816,11 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
         (void) WriteBlobString(image,"} bind def\n");
         (void) WriteBlobString(image,"%%EndProlog\n");
       }
-    (void) FormatLocaleString(buffer,MagickPathExtent,"%%%%Page:  1 %.20g\n",
+    (void) FormatLocaleString(buffer,MagickPathExtent,"%%%%Page:  1 %.17g\n",
       (double) (page++));
     (void) WriteBlobString(image,buffer);
     (void) FormatLocaleString(buffer,MagickPathExtent,
-      "%%%%PageBoundingBox: %.20g %.20g %.20g %.20g\n",(double) geometry.x,
+      "%%%%PageBoundingBox: %.17g %.17g %.17g %.17g\n",(double) geometry.x,
       (double) geometry.y,geometry.x+(double) geometry.width,geometry.y+(double)
       (geometry.height+text_size));
     (void) WriteBlobString(image,buffer);
@@ -1757,7 +1842,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
       Output image data.
     */
     (void) FormatLocaleString(buffer,MagickPathExtent,
-      "%.20g %.20g\n%g %g\n%g\n",(double) geometry.x,(double) geometry.y,
+      "%.17g %.17g\n%g %g\n%g\n",(double) geometry.x,(double) geometry.y,
       scale.x,scale.y,pointsize);
     (void) WriteBlobString(image,buffer);
     labels=(char **) NULL;
@@ -1768,8 +1853,12 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
       {
         for (i=0; labels[i] != (char *) NULL; i++)
         {
-          (void) FormatLocaleString(buffer,MagickPathExtent,"%s \n",
-            labels[i]);
+          char
+            *escape;
+
+          escape=EscapeParenthesis(labels[i],510,exception);
+          (void) FormatLocaleString(buffer,MagickPathExtent,"%s \n",escape);
+          escape=DestroyString(escape);
           (void) WriteBlobString(image,buffer);
           labels[i]=DestroyString(labels[i]);
         }
@@ -1789,7 +1878,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
               Dump image as grayscale.
             */
             (void) FormatLocaleString(buffer,MagickPathExtent,
-              "%.20g %.20g\n1\n1\n1\n8\n",(double) image->columns,(double)
+              "%.17g %.17g\n1\n1\n1\n8\n",(double) image->columns,(double)
               image->rows);
             (void) WriteBlobString(image,buffer);
             q=pixels;
@@ -1812,7 +1901,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
                     (void) WriteBlob(image,(size_t) (q-pixels),pixels);
                     q=pixels;
                   }
-                p+=GetPixelChannels(image);
+                p+=(ptrdiff_t) GetPixelChannels(image);
               }
               if (image->previous == (Image *) NULL)
                 {
@@ -1834,7 +1923,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
               Dump image as bitmap.
             */
             (void) FormatLocaleString(buffer,MagickPathExtent,
-              "%.20g %.20g\n1\n1\n1\n1\n",(double) image->columns,(double)
+              "%.17g %.17g\n1\n1\n1\n1\n",(double) image->columns,(double)
               image->rows);
             (void) WriteBlobString(image,buffer);
             q=pixels;
@@ -1867,7 +1956,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
                     bit=0;
                     byte=0;
                   }
-                p+=GetPixelChannels(image);
+                p+=(ptrdiff_t) GetPixelChannels(image);
               }
               if (bit != 0)
                 {
@@ -1903,7 +1992,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
             Dump DirectClass image.
           */
           (void) FormatLocaleString(buffer,MagickPathExtent,
-            "%.20g %.20g\n0\n%d\n",(double) image->columns,(double) image->rows,
+            "%.17g %.17g\n0\n%d\n",(double) image->columns,(double) image->rows,
             compression == RLECompression ? 1 : 0);
           (void) WriteBlobString(image,buffer);
           switch (compression)
@@ -1944,7 +2033,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
                       length=0;
                     }
                   GetPixelInfoPixel(image,p,&pixel);
-                  p+=GetPixelChannels(image);
+                  p+=(ptrdiff_t) GetPixelChannels(image);
                 }
                 WriteRunlengthPacket(image,pixel,length,p);
                 if ((q-pixels+10) >= 80)
@@ -2004,7 +2093,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
                       (void) WriteBlob(image,(size_t) (q-pixels),pixels);
                       q=pixels;
                     }
-                  p+=GetPixelChannels(image);
+                  p+=(ptrdiff_t) GetPixelChannels(image);
                 }
                 if (image->previous == (Image *) NULL)
                   {
@@ -2030,14 +2119,14 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
             Dump PseudoClass image.
           */
           (void) FormatLocaleString(buffer,MagickPathExtent,
-            "%.20g %.20g\n%d\n%d\n0\n",(double) image->columns,(double)
+            "%.17g %.17g\n%d\n%d\n0\n",(double) image->columns,(double)
             image->rows,image->storage_class == PseudoClass ? 1 : 0,
             compression == RLECompression ? 1 : 0);
           (void) WriteBlobString(image,buffer);
           /*
             Dump number of colors and colormap.
           */
-          (void) FormatLocaleString(buffer,MagickPathExtent,"%.20g\n",(double)
+          (void) FormatLocaleString(buffer,MagickPathExtent,"%.17g\n",(double)
             image->colors);
           (void) WriteBlobString(image,buffer);
           for (i=0; i < (ssize_t) image->colors; i++)
@@ -2090,7 +2179,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
                   pixel.green=(MagickRealType) GetPixelGreen(image,p);
                   pixel.blue=(MagickRealType) GetPixelBlue(image,p);
                   pixel.alpha=(MagickRealType) GetPixelAlpha(image,p);
-                  p+=GetPixelChannels(image);
+                  p+=(ptrdiff_t) GetPixelChannels(image);
                 }
                 q=PopHexPixel(hex_digits,(size_t) index,q);
                 q=PopHexPixel(hex_digits,(size_t) MagickMin(length,0xff),q);
@@ -2136,7 +2225,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
                       (void) WriteBlob(image,(size_t) (q-pixels),pixels);
                       q=pixels;
                     }
-                  p+=GetPixelChannels(image);
+                  p+=(ptrdiff_t) GetPixelChannels(image);
                 }
                 if (image->previous == (Image *) NULL)
                   {
@@ -2170,7 +2259,7 @@ static MagickBooleanType WritePSImage(const ImageInfo *image_info,Image *image,
   if (page > 2)
     {
       (void) FormatLocaleString(buffer,MagickPathExtent,
-        "%%%%BoundingBox: %.20g %.20g %.20g %.20g\n",ceil(bounds.x1-0.5),
+        "%%%%BoundingBox: %.17g %.17g %.17g %.17g\n",ceil(bounds.x1-0.5),
         ceil(bounds.y1-0.5),floor(bounds.x2-0.5),floor(bounds.y2-0.5));
       (void) WriteBlobString(image,buffer);
       (void) FormatLocaleString(buffer,MagickPathExtent,

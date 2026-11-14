@@ -4,7 +4,7 @@
 #  You may not use this file except in compliance with the License.  You may
 #  obtain a copy of the License at
 #
-#    https://imagemagick.org/script/license.php
+#    https://imagemagick.org/license/
 #
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
@@ -86,6 +86,16 @@ MAGICK_TARGET_OS=$host_os
 AC_SUBST([MAGICK_TARGET_OS])
 AC_DEFINE_UNQUOTED([MAGICK_TARGET_OS],[$MAGICK_TARGET_OS],[Target Host OS])
 
+case "$host_os" in
+  mingw* | msys*)
+    SHELL_QUOTE="&quot;"
+    ;;
+  *)
+    SHELL_QUOTE="&apos;"
+    ;;
+esac
+
+AC_SUBST([SHELL_QUOTE])
 
 # Substitute versioning
 AC_SUBST([MAGICK_MAJOR_VERSION],[magick_major_version])
@@ -974,7 +984,7 @@ AC_HEADER_ASSERT
 AC_HEADER_DIRENT
 
 # Check additional headers
-AC_CHECK_HEADERS(arm/limits.h arpa/inet.h complex.h errno.h fcntl.h float.h inttypes.h limits.h linux/unistd.h locale.h machine/param.h mach-o/dyld.h malloc.h netdb.h netinet/in.h OS.h process.h sun_prefetch.h stdarg.h stddef.h stdint.h strings.h sys/ipc.h sys/mman.h sys/resource.h sys/sendfile.h sys/socket.h sys/syslimits.h sys/time.h sys/times.h sys/uio.h unistd.h sys/wait.h utime.h wchar.h xlocale.h)
+AC_CHECK_HEADERS(arm/limits.h arpa/inet.h complex.h errno.h fcntl.h float.h inttypes.h limits.h linux/unistd.h locale.h machine/param.h mach-o/dyld.h malloc.h netdb.h netinet/in.h OS.h process.h sun_prefetch.h stdarg.h stddef.h stdint.h strings.h sys/ipc.h sys/loadavg.h sys/mman.h sys/resource.h sys/sendfile.h sys/socket.h sys/syslimits.h sys/time.h sys/times.h sys/uio.h unistd.h sys/wait.h utime.h wchar.h xlocale.h)
 
 ########
 #
@@ -1047,18 +1057,18 @@ AC_CHECK_SIZEOF([void *])
 ########
 AC_MSG_CHECKING([whether our compiler supports __func__])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],
- [{ const char *func = __func__; return(func != 0 ? 0 : 1); }],
+ [{ const char *func = __func__; return(func != 0 ? 0 : 1); }])],
  AC_MSG_RESULT([yes]),
  AC_MSG_RESULT([no])
  AC_MSG_CHECKING([whether our compiler supports __FUNCTION__])
- AC_COMPILE_IFELSE([],
-   [{ const char *func = __FUNCTION__; return(func != 0 ? 0 : 1); }],
+ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],
+   [{ const char *func = __FUNCTION__; return(func != 0 ? 0 : 1); }])],
    AC_MSG_RESULT([yes])
    AC_DEFINE(__func__, __FUNCTION__,
      [Define to appropriate substitute if compiler does not have __func__]),
    AC_MSG_RESULT([no])
    AC_DEFINE(__func__, __FILE__,
-     [Define to appropriate substitute if compiler does not have __func__])))])
+     [Define to appropriate substitute if compiler does not have __func__])))
 
 ########
 #
@@ -1455,7 +1465,7 @@ if test "$enable_ccmalloc" = 'yes'; then
         OLIBS="$LIBS"
         # Assume that gcc is used with ccmalloc.
         LIBS="$LIBS $CCMALLOC_PREFIX/lib/ccmalloc-gcc.o"
-        AC_CHECK_LIB([ccmalloc],[ccmalloc_malloc],[CCMALLOC_LIBS="$CCMALLOC_PREFIX/lib/ccmalloc-gcc.o -lccmalloc -ldl"],[,-ldl])
+        AC_CHECK_LIB([ccmalloc],[ccmalloc_malloc],[CCMALLOC_LIBS="$CCMALLOC_PREFIX/lib/ccmalloc-gcc.o -lccmalloc -ldl"],[],[-ldl])
         if test -n "$CCMALLOC_LIBS"; then
             LIBS="$OLIBS"
             LIBS="$LIBS $CCMALLOC_LIBS"
@@ -2274,7 +2284,7 @@ if test "$with_fontpath" != "yes" && test -z "$with_fontpath"; then
 else
     AC_DEFINE_UNQUOTED([MAGICK_FONT_PATH],["$with_fontpath"],[Define to prepend to default font search path.])
 fi
-if test "$with_fontpath=" != ''; then
+if test "$with_fontpath" != ''; then
     DISTCHECK_CONFIG_FLAGS="${DISTCHECK_CONFIG_FLAGS} --with-fontpath=$with_fontpath "
 fi
 
@@ -2376,7 +2386,7 @@ HEIF_LIBS=""
 HEIF_PKG=""
 if test "x$with_heic" = "xyes"; then
   AC_MSG_RESULT([-------------------------------------------------------------])
-  PKG_CHECK_MODULES([HEIF],[libheif >= 1.4.0],[have_heic=yes],[have_heic=no])
+  PKG_CHECK_MODULES([HEIF],[libheif >= 1.7.0],[have_heic=yes],[have_heic=no])
   AC_MSG_RESULT([])
 fi
 
@@ -2470,12 +2480,15 @@ if test "$with_jpeg" != 'no'; then
             AC_MSG_RESULT([no -- some components failed test])
             have_jpeg='no (failed tests)'
         else
-            JPEG_LIBS='-ljpeg'
+            if test -z "$JPEG_LIBS"; then
+              JPEG_LIBS='-ljpeg'
+            fi
             LIBS="$JPEG_LIBS $LIBS"
             AC_DEFINE([JPEG_DELEGATE],[1],[Define if you have JPEG library])
             AC_MSG_RESULT([yes])
             have_jpeg='yes'
         fi
+        AC_CHECK_FUNCS([jpeg12_read_scanlines jpeg12_write_scanlines jpeg16_read_scanlines jpeg16_write_scanlines jpeg_enable_lossless jpeg_simple_lossless])
     else
         AC_MSG_RESULT([no])
     fi
@@ -2508,6 +2521,7 @@ fi
 
 if test "$have_jxl" = 'yes'; then
   AC_DEFINE([JXL_DELEGATE],[1],[Define if you have jpeg-xl library])
+  CFLAGS="$JXL_CFLAGS $CFLAGS"
 fi
 
 AM_CONDITIONAL([JXL_DELEGATE],[test "$have_jxl" = 'yes'])
@@ -2871,8 +2885,6 @@ dnl ===========================================================================
 #
 # Check for google libultrahdr delegate library
 #
-# Test for ultrahdr_api.h & test for uhdr_create_decoder in -luhdr
-#
 AC_ARG_WITH([uhdr],
     [AS_HELP_STRING([--with-uhdr],
                     [enable google ultrahdr support])],
@@ -2884,38 +2896,64 @@ if test "$with_uhdr" != 'yes'; then
 fi
 
 have_uhdr='no'
+have_uhdr_shared='no'
+have_uhdr_static='no'
+UHDR_CFLAGS=""
 UHDR_LIBS=""
+UHDR_PKG=""
 if test "$with_uhdr" != 'no'; then
     AC_MSG_RESULT([-------------------------------------------------------------])
-    AC_MSG_CHECKING([for google ultrahdr])
+    PKG_CHECK_MODULES([UHDR_SHARED],[libuhdr >= 1.4.0],
+      [have_uhdr_shared=yes],[have_uhdr_shared=no])
+    PKG_CHECK_MODULES_STATIC([UHDR_STATIC],[libuhdr >= 1.4.0],
+      [have_uhdr_static=yes],[have_uhdr_static=no])
     AC_MSG_RESULT([])
-    failed=0
-    passed=0
+fi
 
-    PKG_CHECK_MODULES([UHDR],[libuhdr >= 1.0],[have_uhdr=yes],[have_uhdr=no])
-    CFLAGS="$CFLAGS $UHDR_CFLAGS"
-    LIBS="$LIBS $UHDR_LIBS"
-    AC_LANG_PUSH([C++])
-    AC_CHECK_HEADER([ultrahdr_api.h],[passed=`expr $passed + 1`],[failed=`expr $failed + 1`])
-    AC_CHECK_LIB([uhdr],[uhdr_create_decoder],[passed=`expr $passed + 1`],[failed=`expr $failed + 1`],[])
-
-    AC_MSG_CHECKING([if google ultrahdr package is complete])
-
-    if test $passed -gt 0; then
-        if test $failed -gt 0; then
-            AC_MSG_RESULT([no -- some components failed test])
-            have_uhdr='no (failed tests)'
-        else
-            UHDR_LIBS='-luhdr'
-            LIBS="$UHDR_LIBS $LIBS"
-            AC_DEFINE([UHDR_DELEGATE],[1],[Define if you have google ultrahdr library])
-            AC_MSG_RESULT([yes])
-            have_uhdr='yes'
-        fi
+if test "$have_uhdr_shared" = 'yes' || test "$have_uhdr_static" = 'yes'; then
+  AC_MSG_CHECKING([whether libuhdr links from C])
+  uhdr_links_from_c='no'
+  saved_CPPFLAGS="$CPPFLAGS"
+  saved_LIBS="$LIBS"
+  for uhdr_link_mode in shared static; do
+    if test "$uhdr_link_mode" = 'shared'; then
+      if test "$have_uhdr_shared" != 'yes'; then
+        continue
+      fi
+      candidate_cflags="$UHDR_SHARED_CFLAGS"
+      candidate_libs="$UHDR_SHARED_LIBS"
     else
-        AC_MSG_RESULT([no])
+      if test "$have_uhdr_static" != 'yes'; then
+        continue
+      fi
+      candidate_cflags="$UHDR_STATIC_CFLAGS"
+      candidate_libs="$UHDR_STATIC_LIBS"
     fi
-    AC_LANG_POP([C++])
+    CPPFLAGS="$candidate_cflags $saved_CPPFLAGS"
+    for cxx_runtime in '' '-lstdc++' '-lc++' '-lc++ -lc++abi'; do
+      LIBS="$candidate_libs $cxx_runtime $MATH_LIBS $saved_LIBS"
+      AC_LINK_IFELSE(
+        [AC_LANG_PROGRAM([[#include <ultrahdr_api.h>]],
+          [[uhdr_codec_private_t *decoder=uhdr_create_decoder();
+            uhdr_codec_private_t *encoder=uhdr_create_encoder();
+            (void) uhdr_encode(encoder);
+            uhdr_release_encoder(encoder);
+            uhdr_release_decoder(decoder);]])],
+        [UHDR_CFLAGS="$candidate_cflags"
+         UHDR_LIBS="$candidate_libs $cxx_runtime"
+         uhdr_links_from_c='yes'
+         have_uhdr='yes'
+         break 2],[])
+    done
+  done
+  CPPFLAGS="$saved_CPPFLAGS"
+  LIBS="$saved_LIBS"
+  AC_MSG_RESULT([$uhdr_links_from_c])
+fi
+
+if test "$have_uhdr" = 'yes'; then
+  AC_DEFINE([UHDR_DELEGATE],[1],[Define if you have google ultrahdr library])
+  CFLAGS="$UHDR_CFLAGS $CFLAGS"
 fi
 
 AM_CONDITIONAL([UHDR_DELEGATE],[test "$have_uhdr" = 'yes'])
@@ -2925,7 +2963,7 @@ AC_SUBST([UHDR_LIBS])
 dnl ===========================================================================
 
 #
-# Set URW Base35 font directory.
+# Set URW Base35 OTF font directory.
 #
 AC_ARG_WITH([urw-base35-font-dir],
     [AS_HELP_STRING([--with-urw-base35-font-dir=DIR],
@@ -2935,6 +2973,21 @@ AC_ARG_WITH([urw-base35-font-dir],
 
 if test "$with_urw_base35_font_dir" != 'default'; then
     DISTCHECK_CONFIG_FLAGS="${DISTCHECK_CONFIG_FLAGS} --with-urw-base35-font-dir=$with_urw_base35_font_dir "
+fi
+
+dnl ===========================================================================
+
+#
+# Set URW Base35 Type1 font directory.
+#
+AC_ARG_WITH([urw-base35-type1-font-dir],
+    [AS_HELP_STRING([--with-urw-base35-type1-font-dir=DIR],
+                    [URW-base35 font directory])],
+    [with_urw_base35_type1_font_dir=$withval],
+    [with_urw_base35_type1_font_dir='default'])
+
+if test "$with_urw_base35_type1_font_dir" != 'default'; then
+    DISTCHECK_CONFIG_FLAGS="${DISTCHECK_CONFIG_FLAGS} --with-urw-base35-type1-font-dir=$with_urw_base35_type1_font_dir "
 fi
 
 dnl ===========================================================================
@@ -3090,7 +3143,7 @@ dnl ===========================================================================
 
 # Check for functions
 #
-AC_CHECK_FUNCS([acosh _aligned_malloc aligned_malloc asinh atanh atoll atexit cabs carg cimag creal clock clock_getres clock_gettime ctime_r directio erf _exit execvp fchmod floor fork ftime ftruncate getc_unlocked getcwd getentropy getexecname getdtablesize getpagesize getpid getpwnam_r getrlimit getrusage gettimeofday gmtime_r isnan j0 j1 lltostr localtime_r lstat memmove memset mkdir mkstemp mmap munmap nanosleep newlocale _NSGetExecutablePath pclose _pclose poll popen _popen posix_fadvise posix_fallocate posix_madvise posix_memalign posix_spawnp pow pread putenv pwrite qsort_r raise rand_r readlink realpath select seekdir sendfile setlocale socket sqrt setvbuf stat strcasestr strchr strrchr strcspn strdup strpbrk strspn strstr strtod strtod_l strtol strtoul symlink sysconf sigemptyset sigaction spawnvp strerror strlcat strlcpy strcasecmp strncasecmp system telldir tempnam times ulltostr uselocale usleep utime utimensat vfprintf vfprintf_l vsprintf vsnprintf vsnprintf_l waitpid _wfopen _wstat])
+AC_CHECK_FUNCS([acosh _aligned_malloc aligned_malloc asinh atanh atoll atexit cabs carg cimag creal clock clock_getres clock_gettime ctime_r directio erf _exit execvp fchmod floor fork ftime ftruncate getc_unlocked getcwd getentropy getexecname getdtablesize getloadavg getpagesize getpid getpwnam_r getrlimit getrusage gettimeofday gmtime_r isnan j0 j1 link lltostr localtime_r lstat memmove memset mkdir mkstemp mmap munmap nanosleep newlocale _NSGetExecutablePath pclose _pclose poll popen _popen posix_fadvise posix_fallocate posix_madvise posix_memalign posix_spawnp pow pread putenv pwrite qsort_r raise rand_r readlink realpath select seekdir sendfile setlocale socket sqrt setvbuf stat strcasestr strchr strrchr strcspn strdup strpbrk strspn strstr strtod strtod_l strtol strtoul symlink sysconf sigemptyset sigaction spawnvp strerror strlcat strlcpy strcasecmp strncasecmp system telldir tempnam times ulltostr uselocale usleep utime utimensat vfprintf vfprintf_l vsprintf vsnprintf vsnprintf_l waitpid _wfopen _wstat])
 
 # Substitute compiler name to build/link PerlMagick
 #
@@ -3139,15 +3192,15 @@ AC_DEFINE_UNQUOTED([EXECUTABLE_PATH],["$DEFINE_EXECUTABLE_PATH"],[Directory wher
 AC_SUBST([EXECUTABLE_PATH])
 
 # Path to ImageMagick lib
-LIBRARY_PATH="${LIB_DIR}/${LIBRARY_RELATIVE_PATH}"
-DEFINE_LIBRARY_PATH="${LIB_DIR}/${LIBRARY_RELATIVE_PATH}/"
+LIBRARY_ABSOLUTE_PATH="${LIB_DIR}/${LIBRARY_RELATIVE_PATH}"
+DEFINE_LIBRARY_ABSOLUTE_PATH="${LIB_DIR}/${LIBRARY_RELATIVE_PATH}/"
 case "${build_os}" in
   mingw* )
-    DEFINE_LIBRARY_PATH=`$WinPathScript "$DEFINE_LIBRARY_PATH" 1`
+    DEFINE_LIBRARY_ABSOLUTE_PATH=`$WinPathScript "$DEFINE_LIBRARY_ABSOLUTE_PATH" 1`
     ;;
 esac
-AC_DEFINE_UNQUOTED([LIBRARY_PATH],["$DEFINE_LIBRARY_PATH"],[Directory where architecture-dependent files live.])
-AC_SUBST([LIBRARY_PATH])
+AC_DEFINE_UNQUOTED([LIBRARY_ABSOLUTE_PATH],["$DEFINE_LIBRARY_ABSOLUTE_PATH"],[Directory where architecture-dependent files live.])
+AC_SUBST([LIBRARY_ABSOLUTE_PATH])
 
 #
 # path to local binaries
@@ -3164,7 +3217,7 @@ AC_SUBST([LIB_BIN_DIR])
 
 LIB_BIN_DIR_RELATIVE_PATH=$LIB_BIN_DIR
 AC_SUBST([LIB_BIN_DIR_RELATIVE_PATH])
-LIB_BIN_DIR_PATH="${LIBRARY_PATH}/${LIB_BIN_DIR_RELATIVE_PATH}"
+LIB_BIN_DIR_PATH="${LIBRARY_ABSOLUTE_PATH}/${LIB_BIN_DIR_RELATIVE_PATH}"
 AC_SUBST([LIB_BIN_DIR_PATH])
 
 #
@@ -3184,7 +3237,7 @@ AC_SUBST([MODULES_DIRNAME])
 
 MODULES_RELATIVE_PATH="${MODULES_DIRNAME}"
 AC_SUBST([MODULES_RELATIVE_PATH])
-MODULES_PATH="${LIBRARY_PATH}/${MODULES_RELATIVE_PATH}"
+MODULES_PATH="${LIBRARY_ABSOLUTE_PATH}/${MODULES_RELATIVE_PATH}"
 AC_SUBST([MODULES_PATH])
 
 #
@@ -3277,7 +3330,7 @@ AC_SUBST([SHAREARCH_DIRNAME])
 
 SHAREARCH_RELATIVE_PATH="${SHAREARCH_DIRNAME}"
 AC_SUBST([SHAREARCH_RELATIVE_PATH])
-SHAREARCH_PATH="${LIBRARY_PATH}/${SHAREARCH_RELATIVE_PATH}"
+SHAREARCH_PATH="${LIBRARY_ABSOLUTE_PATH}/${SHAREARCH_RELATIVE_PATH}"
 AC_SUBST([SHAREARCH_PATH])
 
 #
@@ -3293,6 +3346,9 @@ BPGDecodeDelegateDefault='bpgdec'
 BPGEncodeDelegateDefault='bpgenc'
 BlenderDecodeDelegateDefault='blender'
 BrowseDelegateDefault='xdg-open'
+ClipboardDelegateDefault='xclip'
+C2PADecodeDelegateDefault='c2patool'
+C2PAEncodeDelegateDefault='c2patool'
 DNGDecodeDelegateDefault='darktable-cli'
 DOCDecodeDelegateDefault='libreoffice'
 GVCDecodeDelegateDefault='dot'
@@ -3312,8 +3368,10 @@ LEPDelegateDefault='lepton'
 LPDelegateDefault='lp'
 LPRDelegateDefault='lpr'
 LaunchDelegateDefault='gimp'
+MKDIRDelegateDefault='mkdir'
 MrSIDDecodeDelegateDefault='mrsidgeodecode'
 MVDelegateDefault='mv'
+OpenDelegateDefault='open'
 PCLDelegateDefault='pcl6'
 if test "$native_win32_build" = 'yes'; then
     PSDelegateDefault='gswin32c'
@@ -3338,7 +3396,10 @@ XPSDelegateDefault='gxps'
 AC_PATH_PROG([BPGDecodeDelegate],["$BPGDecodeDelegateDefault"],["$BPGDecodeDelegateDefault"])
 AC_PATH_PROG([BPGEncodeDelegate],["$BPGEncodeDelegateDefault"],["$BPGEncodeDelegateDefault"])
 AC_PATH_PROG([BlenderDecodeDelegate],["$BlenderDecodeDelegateDefault"],["$BlenderDecodeDelegateDefault"])
-AC_PATH_PROGS([BrowseDelegate],["$BrowseDelegateDefault" google-chrome firefox konqueror mozilla lynx],["$BrowseDelegateDefault"])
+AC_PATH_PROGS([BrowseDelegate],["$BrowseDelegateDefault" brave-browser microsoft-edge google-chrome firefox konqueror lynx],["$BrowseDelegateDefault"])
+AC_PATH_PROGS([ClipboardDelegate],["$ClipboardDelegateDefault"],["$ClipboardDelegateDefault"])
+AC_PATH_PROG([C2PADecodeDelegate],["$C2PADecodeDelegateDefault"],["$C2PADecodeDelegateDefault"])
+AC_PATH_PROG([C2PAEncodeDelegate],["$C2PAEncodeDelegateDefault"],["$C2PAEncodeDelegateDefault"])
 AC_PATH_PROG([DNGDecodeDelegate],["$DNGDecodeDelegateDefault"],["$DNGDecodeDelegateDefault"])
 AC_PATH_PROG([DOCDecodeDelegate],["$DOCDecodeDelegateDefault"],["$DOCDecodeDelegateDefault"])
 AC_PATH_PROG([DVIDecodeDelegate],["$DVIDecodeDelegateDefault"],["$DVIDecodeDelegateDefault"])
@@ -3359,8 +3420,10 @@ AC_PATH_PROG([LaunchDelegate],["$LaunchDelegateDefault"],["$LaunchDelegateDefaul
 AC_PATH_PROG([MogrifyDelegate],["$MogrifyDelegateDefault"],["$MogrifyDelegateDefault"])
 AC_PATH_PROG([VIDEODecodeDelegate],["$VIDEODecodeDelegateDefault"],["$VIDEODecodeDelegateDefault"])
 AC_PATH_PROG([VIDEOEncodeDelegate],["$VIDEOEncodeDelegateDefault"],["$VIDEOEncodeDelegateDefault"])
+AC_PATH_PROG([MKDIRDelegate],["$MKDIRDelegateDefault"],["$MKDIRDelegateDefault"])
 AC_PATH_PROG([MrSIDDecodeDelegate],["$MrSIDDecodeDelegateDefault"],["$MrSIDDecodeDelegateDefault"])
 AC_PATH_PROG([MVDelegate],["$MVDelegateDefault"],["$MVDelegateDefault"])
+AC_PATH_PROG([OpenDelegate],["$OpenDelegateDefault"],["$OpenDelegateDefault"])
 AC_PATH_PROG([PCLDelegate],["$PCLDelegateDefault"],["$PCLDelegateDefault"])
 AC_PATH_PROGS([PSDelegate],[gsx gsc "$PSDelegateDefault"],["$PSDelegateDefault"])
 AC_PATH_PROG([RMDelegate],["$RMDelegateDefault"],["$RMDelegateDefault"])
@@ -3388,6 +3451,7 @@ DisplayDelegate="${BIN_DIR}/${DisplayDelegateDefault}"
 MogrifyDelegate="${BIN_DIR}/${MogrifyDelegateDefault}"
 
 # Set delegate booleans
+have_c2pa='no'; if test "$C2PADecodeDelegate" != "$C2PADecodeDelegateDefault" ; then have_c2pa='yes'; fi
 have_gs='no'         ; if test "$PSDelegate" != "$PSDelegateDefault"; then have_gs='yes'; fi
 have_hp2xx='no'      ; if test "$HPGLDecodeDelegate" !=  "$HPGLDecodeDelegateDefault" ; then have_hp2xx='yes'; fi
 have_ilbmtoppm='no'  ; if test "$ILBMDecodeDelegate" != "$ILBMDecodeDelegateDefault" ; then have_ilbmtoppm='yes'; fi
@@ -3429,7 +3493,7 @@ dejavu_font_dir=''
 if test "${with_dejavu_font_dir}" != 'default'; then
   dejavu_font_dir="${with_dejavu_font_dir}/"
 else
-  for font_dir in "${prefix}/share/dejavu/fonts/" '/usr/share/fonts/dejavu/'; do
+  for font_dir in "${prefix}/share/fonts/dejavu" "${prefix}/share/dejavu-serif-fonts/fonts/" '/usr/share/fonts/dejavu-serif-fonts/' '/usr/share/fonts/truetype/dejavu/'; do
     if test -f "${font_dir}DejaVuSerif.ttf"; then
       dejavu_font_dir="${font_dir}"
       break 1
@@ -3462,7 +3526,7 @@ else
       ghostscript_font_dir=`echo "${PSDelegate}" | sed -e 's:/gs/.*:/gs:;s:^/::;s/./&:/;s:/:\\\\:g'`"\\fonts\\"
     fi
   else
-    # Linux / Mac OS X / Unix Build
+    # Linux / macOS / Unix Build
     for font_dir in "${prefix}/share/ghostscript/fonts/" '/usr/share/fonts/default/Type1/' '/usr/share/ghostscript/fonts/' '/usr/share/fonts/ghostscript/' '/usr/share/fonts/type1/gsfonts/' '/opt/local/share/ghostscript/fonts/' '/sw/share/ghostscript/fonts/' '/System/Library/Frameworks/Ghostscript.framework/Resources/fonts/'; do
       if test -f "${font_dir}a010013l.pfb"; then
         ghostscript_font_dir="${font_dir}"
@@ -3489,12 +3553,19 @@ case "${build_os}" in
     ;;
 esac
 
-# URW-base35 fonts.
-AC_MSG_CHECKING([for URW-base35 fonts directory])
+# URW-base35 OTF fonts.
+AC_MSG_CHECKING([for URW-base35 OTF fonts directory])
 urw_base35_font_dir=''
 if test "${with_urw_base35_font_dir}" != 'default'; then
   urw_base35_font_dir="${with_urw_base35_font_dir}/"
-fi
+else
+  for font_dir in "${prefix}/share/urw-base35/fonts/" "${prefix}/share/fonts/opentype/urw-base35" '/usr/share/fonts/urw-base35/' '/usr/share/fonts/opentype/urw-base35/'; do
+    if test -f "${font_dir}URWGothic-Book.otf"; then
+      urw_base35_font_dir="${font_dir}"
+      break 1
+    fi
+  done
+fi 
 if test "${urw_base35_font_dir}x" != 'x'; then
   type_include_files="${type_include_files} "'<include file="type-urw-base35.xml" />'
   AC_MSG_RESULT([$urw_base35_font_dir])
@@ -3503,13 +3574,34 @@ else
 fi
 AC_SUBST([urw_base35_font_dir])
 
+# URW-base35 Type1 fonts.
+AC_MSG_CHECKING([for URW-base35 Type1 fonts directory])
+urw_base35_type1_font_dir=''
+if test "${with_urw_base35_type1_font_dir}" != 'default'; then
+  urw_base35_type1_font_dir="${with_urw_base35_type1_font_dir}/"
+else
+  for font_dir in "${prefix}/share/urw-base35/fonts/" "${prefix}/share/fonts/type1/urw-base35" '/usr/share/fonts/urw-base35/' '/usr/share/fonts/type1/urw-base35/'; do
+    if test -f "${font_dir}URWGothic-Book.t1"; then
+      urw_base35_type1_font_dir="${font_dir}"
+      break 1
+    fi
+  done
+fi 
+if test "${urw_base35_type1_font_dir}x" != 'x'; then
+  type_include_files="${type_include_files} "'<include file="type-urw-base35-type1.xml" />'
+  AC_MSG_RESULT([$urw_base35_type1_font_dir])
+else
+  AC_MSG_RESULT([not found!]);
+fi
+AC_SUBST([urw_base35_type1_font_dir])
+
 # Windows fonts.
 AC_MSG_CHECKING([for Windows fonts directory])
 windows_font_dir=''
 if test "${with_windows_font_dir}" != 'default'; then
   windows_font_dir="${with_windows_font_dir}/"
 else
-  for font_dir in '/usr/X11R6/lib/X11/fonts/truetype/' '/usr/X11R7/lib/X11/fonts/truetype/' '/usr/share/fonts/msttcore/' '/usr/share/fonts/microsoft/' '/usr/share/fonts/truetype/msttcorefonts/'; do
+  for font_dir in '/usr/share/wine/fonts/' '/usr/share/fonts/msttcore/' '/usr/share/fonts/microsoft/' '/usr/share/fonts/truetype/msttcorefonts/'; do
     if test -f "${font_dir}arial.ttf"; then
       windows_font_dir="${font_dir}"
       break 1
@@ -3557,7 +3649,19 @@ magick_channel_mask_depth='32';
 if test "$enable_64bit_channel_masks" = 'yes'; then
     if test "$enable_force_cpp" = 'yes'; then
         AC_MSG_CHECKING([whether the compiler supports -x c++ option])
+        old_CC="$CC"
         old_CFLAGS="$CFLAGS"
+        cpp_CC=''
+        for option in $CC; do
+          case "$option" in
+            -std=c*|-std=gnu*)
+              ;;
+            *)
+              cpp_CC="$cpp_CC $option"
+              ;;
+          esac
+        done
+        CC="$cpp_CC"
         CFLAGS="$CFLAGS -x c++"
         AC_COMPILE_IFELSE([
           AC_LANG_PROGRAM([
@@ -3572,6 +3676,7 @@ if test "$enable_64bit_channel_masks" = 'yes'; then
           AC_MSG_RESULT([no])
         ])
         if test "$magick_channel_mask_depth" != '64'; then
+          CC="$old_CC"
           CFLAGS="$old_CFLAGS"
         fi
     else
@@ -3611,7 +3716,10 @@ if test "$with_frozenpaths" != 'yes'; then
   BPGEncodeDelegate="$BPGEncodeDelegateDefault"
   BlenderDecodeDelegate="$BlenderDecodeDelegateDefault"
   BrowseDelegate="$BrowseDelegateDefault"
+  ClipboardDelegate="$ClipboardDelegateDefault"
   ConvertDelegate="$ConvertDelegateDefault"
+  C2PADecodeDelegate="$C2PADecodeDelegateDefault"
+  C2PAEncodeDelegate="$C2PAEncodeDelegateDefault"
   DisplayDelegate="$DisplayDelegateDefault"
   DNGDecodeDelegate="$DNGDecodeDelegateDefault"
   DOCDecodeDelegate="$DOCDecodeDelegateDefault"
@@ -3629,6 +3737,7 @@ if test "$with_frozenpaths" != 'yes'; then
   LaunchDelegate="$LaunchDelegateDefault"
   MogrifyDelegate="$MogrifyDelegateDefault"
   MrSIDDecodeDelegate="$MrSIDDecodeDelegateDefault"
+  OpenDelegate="$OpenDelegateDefault"
   PCLDelegate="$PCLDelegateDefault"
   PSDelegate="$PSDelegateDefault"
   RSVGDecodeDelegate="$RSVGDecodeDelegateDefault"
@@ -3650,7 +3759,10 @@ AC_SUBST([BPGDecodeDelegate])
 AC_SUBST([BPGEncodeDelegate])
 AC_SUBST([BlenderDecodeDelegate])
 AC_SUBST([BrowseDelegate])
+AC_SUBST([ClipboardDelegate])
 AC_SUBST([ConvertDelegate])
+AC_SUBST([C2PADecodeDelegate])
+AC_SUBST([C2PAEncodeDelegate])
 AC_SUBST([GVCDecodeDelegate])
 AC_SUBST([DVIDecodeDelegate])
 AC_SUBST([EditorDelegate])
@@ -3668,6 +3780,7 @@ AC_SUBST([VIDEODecodeDelegate])
 AC_SUBST([VIDEOEncodeDelegate])
 AC_SUBST([MogrifyDelegate])
 AC_SUBST([MrSIDDecodeDelegate])
+AC_SUBST([OpenDelegate])
 AC_SUBST([PCLDelegate])
 AC_SUBST([PSDelegate])
 AC_SUBST([ShowImageDelegate])
@@ -3711,7 +3824,7 @@ AM_CONDITIONAL([ZIP_DELEGATE],[test "x$ZIP" != "x"])
 #
 # GhostPCL related configuration.
 #
-PCLColorDevice=ppmraw
+PCLColorDevice=png16malpha
 PCLCMYKDevice=pamcmyk32
 PCLMonoDevice=pbmraw
 if test -z "$PCLVersion"; then
@@ -3757,8 +3870,8 @@ AC_SUBST([PCLVersion])
 #
 # GhostXPS related configuration.
 #
-XPSColorDevice=ppmraw
-XPSCMYKDevice=bmpsep8
+XPSColorDevice=png16malpha
+XPSCMYKDevice=pamcmyk32
 XPSMonoDevice=pbmraw
 if test -z "$XPSVersion"; then
     XPSVersion='unknown'
@@ -3803,7 +3916,7 @@ AC_SUBST([XPSVersion])
 #
 # Ghostscript related configuration.
 #
-GSAlphaDevice=pngalpha
+GSAlphaDevice=png16malpha
 GSColorDevice=png16m
 GSCMYKDevice=pamcmyk32
 GSMonoDevice=pbmraw
@@ -3836,6 +3949,8 @@ if test $have_gs = 'yes'; then
     AC_MSG_CHECKING([for gs alpha device])
     if $PSDelegate -q -dBATCH -sDEVICE=$GSAlphaDevice -sOutputFile=/dev/null < /dev/null 1>&AS_MESSAGE_LOG_FD 2>&AS_MESSAGE_LOG_FD; then
         :
+    elif $PSDelegate -q -dBATCH -sDEVICE=pngalpha -sOutputFile=/dev/null < /dev/null 1>&AS_MESSAGE_LOG_FD 2>&AS_MESSAGE_LOG_FD; then
+        GSAlphaDevice=pngalpha
     else
         GSAlphaDevice=$GSColorDevice
     fi
@@ -3965,6 +4080,9 @@ fi
 if test "$have_cairo"    = 'yes' ; then
    MAGICK_DELEGATES="$MAGICK_DELEGATES cairo"
 fi
+if test "$have_c2pa"   = 'yes' ; then
+   MAGICK_DELEGATES="$MAGICK_DELEGATES C2PA"
+fi
 if test "$have_dmr"    = 'yes' ; then
    MAGICK_DELEGATES="$MAGICK_DELEGATES dmr"
 fi
@@ -4024,6 +4142,9 @@ if test "$have_openexr"    = 'yes' ; then
 fi
 if test "$have_pangocairo" = 'yes' ; then
    MAGICK_DELEGATES="$MAGICK_DELEGATES pangocairo"
+fi
+if test "$have_pcl"    = 'yes' ; then
+   MAGICK_DELEGATES="$MAGICK_DELEGATES pcl"
 fi
 if test "$have_png"    = 'yes' ; then
    MAGICK_DELEGATES="$MAGICK_DELEGATES png"
@@ -4200,6 +4321,11 @@ if test "${urw_base35_font_dir}x" != 'x'; then
     result_urw_base35_font_dir=$urw_base35_font_dir
 fi
 
+result_urw_base35_type1_font_dir='none'
+if test "${urw_base35_type1_font_dir}x" != 'x'; then
+    result_urw_base35_type1_font_dir=$urw_base35_type1_font_dir
+fi
+
 result_windows_font_dir='none'
 if test "${windows_font_dir}x" != 'x'; then
     result_windows_font_dir=${windows_font_dir}
@@ -4209,6 +4335,7 @@ fi
 # Generate build environment
 # ==============================================================================
 AC_CONFIG_FILES([\
+    app-image/AppRun \
     common.shi \
     config/policy.xml:config/policy-"$magick_cv_with_security_policy".xml \
     config/configure.xml \
@@ -4221,6 +4348,7 @@ AC_CONFIG_FILES([\
     config/type-dejavu.xml \
     config/type-ghostscript.xml \
     config/type-urw-base35.xml \
+    config/type-urw-base35-type1.xml \
     config/type-windows.xml \
     config/type.xml \
     ImageMagick.spec \
@@ -4340,7 +4468,8 @@ Font configuration:
   Apple fonts       --with-apple-font-dir=$with_apple_font_dir	$result_apple_font_dir
   Dejavu fonts      --with-dejavu-font-dir=$with_dejavu_font_dir	$result_dejavu_font_dir
   Ghostscript fonts --with-gs-font-dir=$with_gs_font_dir		$result_ghostscript_font_dir
-  URW-base35 fonts  --with-urw-base35-font-dir=$with_urw_base35_font_dir	$result_urw_base35_font_dir
+  URW OTF fonts     --with-urw-base35-font-dir=$with_urw_base35_font_dir	$result_urw_base35_font_dir
+  URW Type1 fonts   --with-urw-base35-type1-font-dir=$with_urw_base35_type1_font_dir	$result_urw_base35_type1_font_dir
   Windows fonts     --with-windows-font-dir=$with_windows_font_dir	$result_windows_font_dir
 
 X11 configuration:

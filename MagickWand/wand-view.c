@@ -28,7 +28,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -130,7 +130,7 @@ WandExport WandView *CloneWandView(const WandView *wand_view)
   clone_view=(WandView *) AcquireCriticalMemory(sizeof(*clone_view));
   (void) memset(clone_view,0,sizeof(*clone_view));
   clone_view->id=AcquireWandId();
-  (void) FormatLocaleString(clone_view->name,MagickPathExtent,"%s-%.20g",
+  (void) FormatLocaleString(clone_view->name,MagickPathExtent,"%s-%.17g",
     WandViewId,(double) clone_view->id);
   clone_view->description=ConstantString(wand_view->description);
   clone_view->image=CloneImage(wand_view->image,0,0,MagickTrue,
@@ -320,7 +320,7 @@ WandExport MagickBooleanType DuplexTransferWandViewIterator(WandView *source,
     for (x=0; x < (ssize_t) source->extent.width; x++)
     {
       PixelSetQuantumPixel(source->image,pixels,source->pixel_wands[id][x]);
-      pixels+=GetPixelChannels(source->image);
+      pixels+=(ptrdiff_t) GetPixelChannels(source->image);
     }
     duplex_pixels=GetCacheViewVirtualPixels(duplex->view,duplex->extent.x,y,
       duplex->extent.width,1,duplex->exception);
@@ -333,7 +333,7 @@ WandExport MagickBooleanType DuplexTransferWandViewIterator(WandView *source,
     {
       PixelSetQuantumPixel(duplex->image,duplex_pixels,
         duplex->pixel_wands[id][x]);
-      duplex_pixels+=GetPixelChannels(duplex->image);
+      duplex_pixels+=(ptrdiff_t) GetPixelChannels(duplex->image);
     }
     destination_pixels=GetCacheViewAuthenticPixels(destination->view,
       destination->extent.x,y,destination->extent.width,1,
@@ -347,7 +347,7 @@ WandExport MagickBooleanType DuplexTransferWandViewIterator(WandView *source,
     {
       PixelSetQuantumPixel(destination->image,destination_pixels,
         destination->pixel_wands[id][x]);
-      destination_pixels+=GetPixelChannels(destination->image);
+      destination_pixels+=(ptrdiff_t) GetPixelChannels(destination->image);
     }
     if (transfer(source,duplex,destination,y,id,context) == MagickFalse)
       status=MagickFalse;
@@ -358,7 +358,7 @@ WandExport MagickBooleanType DuplexTransferWandViewIterator(WandView *source,
     {
       PixelGetQuantumPixel(destination->image,destination->pixel_wands[id][x],
         destination_pixels);
-      destination_pixels+=GetPixelChannels(destination->image);
+      destination_pixels+=(ptrdiff_t) GetPixelChannels(destination->image);
     }
     sync=SyncCacheViewAuthenticPixels(destination->view,destination->exception);
     if (sync == MagickFalse)
@@ -567,7 +567,7 @@ WandExport MagickBooleanType GetWandViewIterator(WandView *source,
     for (x=0; x < (ssize_t) source->extent.width; x++)
     {
       PixelSetQuantumPixel(source->image,pixels,source->pixel_wands[id][x]);
-      pixels+=GetPixelChannels(source->image);
+      pixels+=(ptrdiff_t) GetPixelChannels(source->image);
     }
     if (get(source,y,id,context) == MagickFalse)
       status=MagickFalse;
@@ -723,7 +723,7 @@ static PixelWand ***AcquirePixelsTLS(const size_t number_wands)
   ssize_t
     i;
 
-  number_threads=GetOpenMPMaximumThreads();
+  number_threads=(size_t) GetMagickResourceLimit(ThreadResource);
   pixel_wands=(PixelWand ***) AcquireQuantumMemory(number_threads,
     sizeof(*pixel_wands));
   if (pixel_wands == (PixelWand ***) NULL)
@@ -751,7 +751,7 @@ WandExport WandView *NewWandView(MagickWand *wand)
   wand_view=(WandView *) AcquireCriticalMemory(sizeof(*wand_view));
   (void) memset(wand_view,0,sizeof(*wand_view));
   wand_view->id=AcquireWandId();
-  (void) FormatLocaleString(wand_view->name,MagickPathExtent,"%s-%.20g",
+  (void) FormatLocaleString(wand_view->name,MagickPathExtent,"%s-%.17g",
     WandViewId,(double) wand_view->id);
   wand_view->description=ConstantString("WandView");
   wand_view->wand=wand;
@@ -764,7 +764,7 @@ WandExport WandView *NewWandView(MagickWand *wand)
   wand_view->exception=exception;
   if (wand_view->pixel_wands == (PixelWand ***) NULL)
     ThrowWandFatalException(ResourceLimitFatalError,"MemoryAllocationFailed",
-      GetExceptionMessage(errno));
+      (char *) NULL);
   wand_view->debug=IsEventLogging();
   wand_view->signature=MagickWandSignature;
   return(wand_view);
@@ -811,7 +811,7 @@ WandExport WandView *NewWandViewExtent(MagickWand *wand,const ssize_t x,
   wand_view=(WandView *) AcquireCriticalMemory(sizeof(*wand_view));
   (void) memset(wand_view,0,sizeof(*wand_view));
   wand_view->id=AcquireWandId();
-  (void) FormatLocaleString(wand_view->name,MagickPathExtent,"%s-%.20g",
+  (void) FormatLocaleString(wand_view->name,MagickPathExtent,"%s-%.17g",
     WandViewId,(double) wand_view->id);
   wand_view->description=ConstantString("WandView");
   exception=AcquireExceptionInfo();
@@ -825,7 +825,7 @@ WandExport WandView *NewWandViewExtent(MagickWand *wand,const ssize_t x,
   wand_view->pixel_wands=AcquirePixelsTLS(wand_view->extent.width);
   if (wand_view->pixel_wands == (PixelWand ***) NULL)
     ThrowWandFatalException(ResourceLimitFatalError,"MemoryAllocationFailed",
-      GetExceptionMessage(errno));
+      (char *) NULL);
   wand_view->debug=IsEventLogging();
   wand_view->signature=MagickWandSignature;
   return(wand_view);
@@ -972,7 +972,7 @@ WandExport MagickBooleanType SetWandViewIterator(WandView *destination,
     {
       PixelGetQuantumPixel(destination->image,destination->pixel_wands[id][x],
         pixels);
-      pixels+=GetPixelChannels(destination->image);
+      pixels+=(ptrdiff_t) GetPixelChannels(destination->image);
     }
     sync=SyncCacheViewAuthenticPixels(destination->view,destination->exception);
     if (sync == MagickFalse)
@@ -1110,7 +1110,7 @@ WandExport MagickBooleanType TransferWandViewIterator(WandView *source,
     for (x=0; x < (ssize_t) source->extent.width; x++)
     {
       PixelSetQuantumPixel(source->image,pixels,source->pixel_wands[id][x]);
-      pixels+=GetPixelChannels(source->image);
+      pixels+=(ptrdiff_t) GetPixelChannels(source->image);
     }
     destination_pixels=GetCacheViewAuthenticPixels(destination->view,
       destination->extent.x,y,destination->extent.width,1,
@@ -1124,7 +1124,7 @@ WandExport MagickBooleanType TransferWandViewIterator(WandView *source,
     {
       PixelSetQuantumPixel(destination->image,destination_pixels,
         destination->pixel_wands[id][x]);
-      destination_pixels+=GetPixelChannels(destination->image);
+      destination_pixels+=(ptrdiff_t) GetPixelChannels(destination->image);
     }
     if (transfer(source,destination,y,id,context) == MagickFalse)
       status=MagickFalse;
@@ -1135,7 +1135,7 @@ WandExport MagickBooleanType TransferWandViewIterator(WandView *source,
     {
       PixelGetQuantumPixel(destination->image,destination->pixel_wands[id][x],
         destination_pixels);
-      destination_pixels+=GetPixelChannels(destination->image);
+      destination_pixels+=(ptrdiff_t) GetPixelChannels(destination->image);
     }
     sync=SyncCacheViewAuthenticPixels(destination->view,destination->exception);
     if (sync == MagickFalse)
@@ -1267,7 +1267,7 @@ WandExport MagickBooleanType UpdateWandViewIterator(WandView *source,
     for (x=0; x < (ssize_t) source->extent.width; x++)
     {
       PixelSetQuantumPixel(source->image,p,source->pixel_wands[id][x]);
-      p+=GetPixelChannels(source->image);
+      p+=(ptrdiff_t) GetPixelChannels(source->image);
     }
     if (update(source,y,id,context) == MagickFalse)
       status=MagickFalse;
@@ -1275,7 +1275,7 @@ WandExport MagickBooleanType UpdateWandViewIterator(WandView *source,
     for (x=0; x < (ssize_t) source->extent.width; x++)
     {
       PixelGetQuantumPixel(source->image,source->pixel_wands[id][x],q);
-      q+=GetPixelChannels(source->image);
+      q+=(ptrdiff_t) GetPixelChannels(source->image);
     }
     sync=SyncCacheViewAuthenticPixels(source->view,source->exception);
     if (sync == MagickFalse)

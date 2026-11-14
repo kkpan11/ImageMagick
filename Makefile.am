@@ -4,7 +4,7 @@
 #  You may not use this file except in compliance with the License.  You may
 #  obtain a copy of the License at
 #
-#    https://imagemagick.org/script/license.php
+#    https://imagemagick.org/license/
 #
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
@@ -100,7 +100,6 @@ TOP_EXTRA_DIST = \
   NOTICE \
   Install-mac.txt \
   Install-unix.txt \
-  Install-vms.txt \
   Install-windows.txt \
   magick.sh.in \
   Magickshr.opt \
@@ -213,7 +212,7 @@ ptrcheck:
 	$(MAKE) MEMCHECK='valgrind --tool=exp-ptrcheck --quiet $(VALGRIND_EXTRA_OPTS)' check
 
 # Non-Automake subdirectories to distribute
-DISTDIRS = images scripts www PerlMagick
+DISTDIRS = scripts www PerlMagick
 dist-hook:
 	( \
 	  builddir=`pwd` ; \
@@ -232,7 +231,6 @@ dist-hook:
 
 # Install HTML files
 pkgdocdir = $(DOCUMENTATION_PATH)
-DOCDIRS = images images/patterns www www/assets www/api www/source www/Magick++
 
 if INSTALL_DOC
 HTML_INSTALL_DATA_TARGETS = install-data-html
@@ -241,7 +239,7 @@ endif
 install-data-html:
 	$(mkinstalldirs) $(DESTDIR)$(pkgdocdir)
 	$(INSTALL_DATA) $(srcdir)/index.html $(DESTDIR)$(pkgdocdir)
-	@for dir in $(DOCDIRS) ; do \
+	@for dir in $$(find www -type d) ; do \
 	  $(mkinstalldirs) $(DESTDIR)$(pkgdocdir)/$$dir && \
 	  if test -d $(builddir)/$$dir ; then \
 	    docsrcdir=$(builddir)/$$dir; \
@@ -258,7 +256,7 @@ install-data-html:
 HTML_UNINSTALL_DATA_TARGETS = uninstall-data-html
 uninstall-data-html:
 	rm -f $(DESTDIR)$(pkgdocdir)/index.html
-	for dir in $(DOCDIRS) ; do \
+	for dir in $$(find www -type d) ; do \
 	  rm -f -r $(DESTDIR)$(pkgdocdir)/$$dir ; \
 	done
 

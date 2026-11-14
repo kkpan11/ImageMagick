@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -46,7 +46,7 @@
 #include "MagickCore/log.h"
 #include "MagickCore/monitor.h"
 #include "MagickCore/monitor-private.h"
-#include "MagickCore/pixel-accessor.h"
+#include "MagickCore/statistic-private.h"
 
 /*
   Static declarations.
@@ -156,7 +156,7 @@ MagickExport MagickBooleanType SetImageProgress(const Image *image,
   LockSemaphoreInfo(monitor_semaphore);
   status=image->progress_monitor(message,offset,extent,image->client_data);
   (void) FormatLocaleString(message,MagickPathExtent,"%g%%:%s:%s",
-    (double) (100.0*offset*PerceptibleReciprocal(extent-1.0)),
+    (double) (100.0*offset*MagickSafeReciprocal((double) extent-1.0)),
     tag == (const char *) NULL ? "null" : tag,image->filename);
   (void) SetImageArtifact((Image *) image,"monitor:progress",message);
   UnlockSemaphoreInfo(monitor_semaphore);

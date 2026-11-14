@@ -17,13 +17,13 @@
 %                                 July 2018                                   %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2018 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -207,9 +207,9 @@ static Image *ReadCUBEImage(const ImageInfo *image_info,
             if (n >= (ssize_t) (cube_level*cube_level*cube_level))
               break;
             r=buffer;
-            cube[n].r=StringToDouble(r,&r);
-            cube[n].g=StringToDouble(r,&r);
-            cube[n].b=StringToDouble(r,&r);
+            cube[n].r=StringToFloat(r,&r);
+            cube[n].g=StringToFloat(r,&r);
+            cube[n].b=StringToFloat(r,&r);
             n++;
           }
         else
@@ -272,23 +272,23 @@ static Image *ReadCUBEImage(const ImageInfo *image_info,
           offset,
           scale;
 
-        offset.r=(PerceptibleReciprocal((double) (hald_level*hald_level)-1.0)*
-          r)*(cube_level-1.0);
-        index.r=floor(offset.r);
+        offset.r=(float) ((MagickSafeReciprocal(((double) hald_level*hald_level)-1.0)*
+          r)*(cube_level-1.0));
+        index.r=floorf(offset.r);
         scale.r=offset.r-index.r;
         next.r=index.r+1;
         if ((size_t) index.r == (cube_level-1))
           next.r=index.r;
-        offset.g=(PerceptibleReciprocal(((double) hald_level*hald_level)-1.0)*
-          g)*(cube_level-1.0);
-        index.g=floor(offset.g);
+        offset.g=(float) ((MagickSafeReciprocal(((double) hald_level*hald_level)-1.0)*
+          g)*(cube_level-1.0));
+        index.g=floorf(offset.g);
         scale.g=offset.g-index.g;
         next.g=index.g+1;
         if ((size_t) index.g == (cube_level-1))
           next.g=index.g;
-        offset.b=(PerceptibleReciprocal(((double) hald_level*hald_level)-1.0)*
-          b)*(cube_level-1.0);
-        index.b=floor(offset.b);
+        offset.b=(float) ((MagickSafeReciprocal(((double) hald_level*hald_level)-1.0)*
+          b)*(cube_level-1.0));
+        index.b=floorf(offset.b);
         scale.b=offset.b-index.b;
         next.b=index.b+1;
         if ((size_t) index.b == (cube_level-1))
@@ -305,7 +305,7 @@ static Image *ReadCUBEImage(const ImageInfo *image_info,
           cube[FlattenCube(cube_level,index.b,index.g,index.r)].b+scale.b*(
           cube[FlattenCube(cube_level,next.b,index.g,index.r)].b-
           cube[FlattenCube(cube_level,index.b,index.g,index.r)].b))),q);
-        q+=GetPixelChannels(image);
+        q+=(ptrdiff_t) GetPixelChannels(image);
       }
       if (SyncAuthenticPixels(image,exception) == MagickFalse)
         status=MagickFalse;
@@ -317,8 +317,12 @@ static Image *ReadCUBEImage(const ImageInfo *image_info,
   if (status == MagickFalse)
     return(DestroyImageList(image));
   if (image_info->scene != 0)
-    for (i=0; i < (ssize_t) image_info->scene; i++)
-      AppendImageToList(&image,CloneImage(image,0,0,MagickTrue,exception));
+    {
+      if (AcquireMagickResource(ListLengthResource,image_info->scene) == MagickFalse)
+        ThrowReaderException(ResourceLimitError,"ListLengthExceedsLimit");
+      for (i=0; i < (ssize_t) image_info->scene; i++)
+        AppendImageToList(&image,CloneImage(image,0,0,MagickTrue,exception));
+    }
   return(GetFirstImageInList(image));
 }
 

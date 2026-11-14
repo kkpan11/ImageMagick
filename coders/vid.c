@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -190,7 +190,7 @@ static Image *ReadVIDImage(const ImageInfo *image_info,ExceptionInfo *exception)
       }
     if (IsEventLogging() != MagickFalse)
       (void) LogMagickEvent(CoderEvent,GetMagickModule(),
-        "geometry: %.20gx%.20g",(double) next_image->columns,(double)
+        "geometry: %.17gx%.17g",(double) next_image->columns,(double)
         next_image->rows);
     SetGeometry(next_image,&geometry);
     (void) ParseMetaGeometry(read_info->size,&geometry.x,&geometry.y,
@@ -204,7 +204,7 @@ static Image *ReadVIDImage(const ImageInfo *image_info,ExceptionInfo *exception)
       }
     if (IsEventLogging() != MagickFalse)
       (void) LogMagickEvent(CoderEvent,GetMagickModule(),
-        "thumbnail geometry: %.20gx%.20g",(double) next_image->columns,(double)
+        "thumbnail geometry: %.17gx%.17g",(double) next_image->columns,(double)
         next_image->rows);
     AppendImageToList(&images,next_image);
     status=SetImageProgress(images,LoadImagesTag,i,(MagickSizeType)
@@ -264,6 +264,7 @@ ModuleExport size_t RegisterVIDImage(void)
   entry->decoder=(DecodeImageHandler *) ReadVIDImage;
   entry->encoder=(EncodeImageHandler *) WriteVIDImage;
   entry->format_type=ImplicitFormatType;
+  entry->flags^=CoderBlobSupportFlag;
   (void) RegisterMagickInfo(entry);
   return(MagickImageCoderSignature);
 }
@@ -344,7 +345,10 @@ static MagickBooleanType WriteVIDImage(const ImageInfo *image_info,Image *image,
     Create the visual image directory.
   */
   for (p=image; p != (Image *) NULL; p=GetNextImageInList(p))
+  {
+    (void) CopyMagickString(p->filename,p->magick_filename,MagickPathExtent);
     (void) SetImageProperty(p,"label",DefaultTileLabel,exception);
+  }
   montage_info=CloneMontageInfo(image_info,(MontageInfo *) NULL);
   montage_image=MontageImageList(image_info,montage_info,image,exception);
   montage_info=DestroyMontageInfo(montage_info);

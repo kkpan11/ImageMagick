@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -245,8 +245,8 @@ MagickExport MagickBooleanType FloodfillPaintImage(Image *image,
       exception);
     if ((p == (const Quantum *) NULL) || (q == (Quantum *) NULL))
       break;
-    p+=x1*(ssize_t) GetPixelChannels(image);
-    q+=x1*(ssize_t) GetPixelChannels(floodplane_image);
+    p+=(ptrdiff_t) x1*(ssize_t) GetPixelChannels(image);
+    q+=(ptrdiff_t) x1*(ssize_t) GetPixelChannels(floodplane_image);
     for (x=x1; x >= 0; x--)
     {
       if (GetPixelGray(floodplane_image,q) != 0)
@@ -255,7 +255,7 @@ MagickExport MagickBooleanType FloodfillPaintImage(Image *image,
       if (IsFuzzyEquivalencePixelInfo(&pixel,target) == invert)
         break;
       SetPixelGray(floodplane_image,QuantumRange,q);
-      p-=GetPixelChannels(image);
+      p-=(ptrdiff_t)GetPixelChannels(image);
       q-=GetPixelChannels(floodplane_image);
     }
     if (SyncCacheViewAuthenticPixels(floodplane_view,exception) == MagickFalse)
@@ -288,8 +288,8 @@ MagickExport MagickBooleanType FloodfillPaintImage(Image *image,
                 if (IsFuzzyEquivalencePixelInfo(&pixel,target) == invert)
                   break;
                 SetPixelGray(floodplane_image,QuantumRange,q);
-                p+=GetPixelChannels(image);
-                q+=GetPixelChannels(floodplane_image);
+                p+=(ptrdiff_t) GetPixelChannels(image);
+                q+=(ptrdiff_t) GetPixelChannels(floodplane_image);
               }
               status=SyncCacheViewAuthenticPixels(floodplane_view,exception);
               if (status == MagickFalse)
@@ -316,8 +316,8 @@ MagickExport MagickBooleanType FloodfillPaintImage(Image *image,
             GetPixelInfoPixel(image,p,&pixel);
             if (IsFuzzyEquivalencePixelInfo(&pixel,target) != invert)
               break;
-            p+=GetPixelChannels(image);
-            q+=GetPixelChannels(floodplane_image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(floodplane_image);
           }
         }
       start=x;
@@ -371,8 +371,8 @@ MagickExport MagickBooleanType FloodfillPaintImage(Image *image,
               ((image->alpha_trait & BlendPixelTrait) != 0))
             SetPixelAlpha(image,(Quantum) fill_color.alpha,q);
         }
-      p+=GetPixelChannels(floodplane_image);
-      q+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(floodplane_image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -540,7 +540,7 @@ MagickExport MagickBooleanType GradientImage(Image *image,
     gradient->angle=StringToDouble(artifact,(char **) NULL);
   artifact=GetImageArtifact(image,"gradient:vector");
   if (artifact != (const char *) NULL)
-    (void) sscanf(artifact,"%lf%*[ ,]%lf%*[ ,]%lf%*[ ,]%lf",
+    (void) MagickSscanf(artifact,"%lf%*[ ,]%lf%*[ ,]%lf%*[ ,]%lf",
       &gradient->gradient_vector.x1,&gradient->gradient_vector.y1,
       &gradient->gradient_vector.x2,&gradient->gradient_vector.y2);
   if ((GetImageArtifact(image,"gradient:angle") == (const char *) NULL) &&
@@ -553,7 +553,7 @@ MagickExport MagickBooleanType GradientImage(Image *image,
   gradient->center.y=(double) gradient->gradient_vector.y2/2.0;
   artifact=GetImageArtifact(image,"gradient:center");
   if (artifact != (const char *) NULL)
-    (void) sscanf(artifact,"%lf%*[ ,]%lf",&gradient->center.x,
+    (void) MagickSscanf(artifact,"%lf%*[ ,]%lf",&gradient->center.x,
       &gradient->center.y);
   artifact=GetImageArtifact(image,"gradient:angle");
   if ((type == LinearGradient) && (artifact != (const char *) NULL))
@@ -613,7 +613,7 @@ MagickExport MagickBooleanType GradientImage(Image *image,
     }
   artifact=GetImageArtifact(image,"gradient:radii");
   if (artifact != (const char *) NULL)
-    (void) sscanf(artifact,"%lf%*[ ,]%lf",&gradient->radii.x,
+    (void) MagickSscanf(artifact,"%lf%*[ ,]%lf",&gradient->radii.x,
       &gradient->radii.y);
   gradient->radius=MagickMax(gradient->radii.x,gradient->radii.y);
   gradient->spread=method;
@@ -856,8 +856,8 @@ MagickExport Image *OilPaintImage(const Image *image,const double radius,
         SetPixelChannel(paint_image,channel,p[j*(ssize_t)
           GetPixelChannels(linear_image)+i],q);
       }
-      p+=GetPixelChannels(linear_image);
-      q+=GetPixelChannels(paint_image);
+      p+=(ptrdiff_t) GetPixelChannels(linear_image);
+      q+=(ptrdiff_t) GetPixelChannels(paint_image);
     }
     if (SyncCacheViewAuthenticPixels(paint_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -1012,7 +1012,7 @@ MagickExport MagickBooleanType OpaquePaintImage(Image *image,
           if ((traits & UpdatePixelTrait) != 0)
             SetPixelAlpha(image,(Quantum) conform_fill.alpha,q);
         }
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -1140,7 +1140,7 @@ MagickExport MagickBooleanType TransparentPaintImage(Image *image,
       GetPixelInfoPixel(image,q,&pixel);
       if (IsFuzzyEquivalencePixelInfo(&pixel,target) != invert)
         SetPixelAlpha(image,opacity,q);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -1275,7 +1275,7 @@ MagickExport MagickBooleanType TransparentPaintImageChroma(Image *image,
         MagickFalse;
       if (match != invert)
         SetPixelAlpha(image,opacity,q);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(image_view,exception) == MagickFalse)
       status=MagickFalse;

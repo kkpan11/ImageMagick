@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -422,8 +422,10 @@ WandExport MagickBooleanType CompositeImageCommand(ImageInfo *image_info,
 }
 #define ThrowCompositeException(asperity,tag,option) \
 { \
-  (void) ThrowMagickException(exception,GetMagickModule(),asperity,tag,"`%s'", \
-     option == (char *) NULL ? GetExceptionMessage(errno) : option); \
+  char *message = GetExceptionMessage(errno);     \
+  (void) ThrowMagickException(exception,GetMagickModule(),asperity,tag, \
+    "`%s'",option == (char *) NULL ? message : option); \
+  message=DestroyString(message); \
   DestroyComposite(); \
   return(MagickFalse); \
 }
@@ -457,7 +459,7 @@ WandExport MagickBooleanType CompositeImageCommand(ImageInfo *image_info,
   MagickBooleanType
     fire,
     pend,
-    respect_parenthesis;
+    respect_parentheses;
 
   MagickStatusType
     status;
@@ -502,7 +504,7 @@ WandExport MagickBooleanType CompositeImageCommand(ImageInfo *image_info,
   NewImageStack();
   option=(char *) NULL;
   pend=MagickFalse;
-  respect_parenthesis=MagickFalse;
+  respect_parentheses=MagickFalse;
   status=MagickTrue;
   /*
     Check command syntax.
@@ -514,8 +516,8 @@ WandExport MagickBooleanType CompositeImageCommand(ImageInfo *image_info,
   status=ExpandFilenames(&argc,&argv);
   if (status == MagickFalse)
     ThrowCompositeException(ResourceLimitError,"MemoryAllocationFailed",
-      GetExceptionMessage(errno));
-  for (i=1; i < (ssize_t) (argc-1); i++)
+      (char *) NULL);
+  for (i=1; i < ((ssize_t) argc-1); i++)
   {
     option=argv[i];
     if (LocaleCompare(option,"(") == 0)
@@ -542,7 +544,7 @@ WandExport MagickBooleanType CompositeImageCommand(ImageInfo *image_info,
         */
         FireImageStack(MagickFalse,MagickFalse,pend);
         filename=argv[i];
-        if ((LocaleCompare(filename,"--") == 0) && (i < (ssize_t) (argc-1)))
+        if ((LocaleCompare(filename,"--") == 0) && (i < ((ssize_t) argc-1)))
           filename=argv[++i];
         images=ReadImages(image_info,filename,exception);
         status&=(MagickStatusType) (images != (Image *) NULL) &&
@@ -1319,7 +1321,7 @@ WandExport MagickBooleanType CompositeImageCommand(ImageInfo *image_info,
           }
         if (LocaleNCompare("respect-parentheses",option+1,17) == 0)
           {
-            respect_parenthesis=(*option == '-') ? MagickTrue : MagickFalse;
+            respect_parentheses=(*option == '-') ? MagickTrue : MagickFalse;
             break;
           }
         if (LocaleCompare("resize",option+1) == 0)
@@ -1637,7 +1639,7 @@ WandExport MagickBooleanType CompositeImageCommand(ImageInfo *image_info,
   }
   if (k != 0)
     ThrowCompositeException(OptionError,"UnbalancedParenthesis",argv[i]);
-  if (i-- != (ssize_t) (argc-1))
+  if (i-- != ((ssize_t) argc-1))
     ThrowCompositeException(OptionError,"MissingAnImageFilename",argv[i]);
   if ((image == (Image *) NULL) || (GetImageListLength(image) < 2))
     ThrowCompositeException(OptionError,"MissingAnImageFilename",argv[argc-1]);
@@ -1688,7 +1690,7 @@ WandExport MagickBooleanType CompositeImageCommand(ImageInfo *image_info,
       text=InterpretImageProperties(image_info,images,format,exception);
       if (text == (char *) NULL)
         ThrowCompositeException(ResourceLimitError,"MemoryAllocationFailed",
-          GetExceptionMessage(errno));
+          (char *) NULL);
       (void) ConcatenateString(&(*metadata),text);
       text=DestroyString(text);
     }

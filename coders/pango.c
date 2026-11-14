@@ -17,13 +17,13 @@
 %                                 March 2012                                  %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2012 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -427,7 +427,7 @@ static Image *ReadPANGOImage(const ImageInfo *image_info,
   cairo_set_operator(cairo_image,CAIRO_OPERATOR_CLEAR);
   cairo_paint(cairo_image);
   cairo_set_operator(cairo_image,CAIRO_OPERATOR_OVER);
-  cairo_translate(cairo_image,page.x,page.y);
+  cairo_translate(cairo_image,(double) page.x,(double) page.y);
   cairo_set_source_rgba(cairo_image,QuantumScale*draw_info->fill.red,
     QuantumScale*draw_info->fill.green,QuantumScale*draw_info->fill.blue,
     QuantumScale*draw_info->fill.alpha);
@@ -466,13 +466,13 @@ static Image *ReadPANGOImage(const ImageInfo *image_info,
         Disassociate alpha.
       */
       gamma=QuantumScale*fill_color.alpha;
-      gamma=PerceptibleReciprocal(gamma);
+      gamma=MagickSafeReciprocal(gamma);
       fill_color.blue*=gamma;
       fill_color.green*=gamma;
       fill_color.red*=gamma;
       CompositePixelOver(image,&fill_color,fill_color.alpha,q,(double)
         GetPixelAlpha(image,q),q);
-      q+=GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
       break;

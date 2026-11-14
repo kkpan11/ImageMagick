@@ -23,13 +23,13 @@
 %                                 August 2003                                 %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2003 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -2619,7 +2619,7 @@ WandExport MagickBooleanType MagickSetPage(MagickWand *wand,
   assert(wand->signature == MagickWandSignature);
   if (wand->debug != MagickFalse)
     (void) LogMagickEvent(WandEvent,GetMagickModule(),"%s",wand->name);
-  (void) FormatLocaleString(geometry,MagickPathExtent,"%.20gx%.20g%+.20g%+.20g",
+  (void) FormatLocaleString(geometry,MagickPathExtent,"%.17gx%.17g%+.20g%+.20g",
     (double) width,(double) height,(double) x,(double) y);
   (void) CloneString(&wand->image_info->page,geometry);
   return(MagickTrue);
@@ -2721,7 +2721,7 @@ WandExport MagickBooleanType MagickSetPointsize(MagickWand *wand,
 %
 %  The format of the MagickSetProgressMonitor method is:
 %
-%      MagickProgressMonitor MagickSetProgressMonitor(MagickWand *wand
+%      MagickProgressMonitor MagickSetProgressMonitor(MagickWand *wand,
 %        const MagickProgressMonitor progress_monitor,void *client_data)
 %
 %  A description of each parameter follows:
@@ -2871,7 +2871,7 @@ WandExport MagickBooleanType MagickSetSamplingFactors(MagickWand *wand,
       RelinquishMagickMemory(wand->image_info->sampling_factor);
   if (number_factors == 0)
     return(MagickTrue);
-  for (i=0; i < (ssize_t) (number_factors-1); i++)
+  for (i=0; i < ((ssize_t) number_factors-1); i++)
   {
     (void) FormatLocaleString(sampling_factor,MagickPathExtent,"%g:",
       sampling_factors[i]);
@@ -2986,7 +2986,7 @@ WandExport MagickBooleanType MagickSetSize(MagickWand *wand,
   assert(wand->signature == MagickWandSignature);
   if (wand->debug != MagickFalse)
     (void) LogMagickEvent(WandEvent,GetMagickModule(),"%s",wand->name);
-  (void) FormatLocaleString(geometry,MagickPathExtent,"%.20gx%.20g",(double)
+  (void) FormatLocaleString(geometry,MagickPathExtent,"%.17gx%.17g",(double)
     columns,(double) rows);
   (void) CloneString(&wand->image_info->size,geometry);
   return(MagickTrue);
@@ -3033,7 +3033,7 @@ WandExport MagickBooleanType MagickSetSizeOffset(MagickWand *wand,
   assert(wand->signature == MagickWandSignature);
   if (wand->debug != MagickFalse)
     (void) LogMagickEvent(WandEvent,GetMagickModule(),"%s",wand->name);
-  (void) FormatLocaleString(geometry,MagickPathExtent,"%.20gx%.20g%+.20g",
+  (void) FormatLocaleString(geometry,MagickPathExtent,"%.17gx%.17g%+.20g",
     (double) columns,(double) rows,(double) offset);
   (void) CloneString(&wand->image_info->size,geometry);
   return(MagickTrue);

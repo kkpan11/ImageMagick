@@ -5,7 +5,7 @@
   You may not use this file except in compliance with the License.  You may
   obtain a copy of the License at
 
-    https://imagemagick.org/script/license.php
+    https://imagemagick.org/license/
 
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,15 +18,13 @@
 #ifndef MAGICKCORE_IMAGE_PRIVATE_H
 #define MAGICKCORE_IMAGE_PRIVATE_H
 
+#include <limits.h>
+#include "MagickCore/pixel-accessor.h"
+#include "MagickCore/quantum-private.h"
+
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
 #endif
-
-#define MagickMax(x,y)  (((x) > (y)) ? (x) : (y))
-#define MagickMin(x,y)  (((x) < (y)) ? (x) : (y))
-
-#include "MagickCore/pixel-accessor.h"
-#include "MagickCore/quantum-private.h"
 
 #define BackgroundColor  "#ffffff"  /* white */
 #define BackgroundColorRGBA  QuantumRange,QuantumRange,QuantumRange,OpaqueAlpha
@@ -49,9 +47,10 @@ extern "C" {
 #define MagickSQ1_2  0.70710678118654752440084436210484903928483593768847
 #define MagickSQ2    1.41421356237309504880168872420969807856967187537695
 #define MagickSQ2PI  2.50662827463100024161235523934010416269302368164062
-#define MAGICK_SIZE_MAX  (SIZE_MAX)
-#define MAGICK_SSIZE_MAX  (SSIZE_MAX)
-#define MAGICK_SSIZE_MIN  (-SSIZE_MAX-1)
+#define MAGICK_UCHAR_MAX  (UCHAR_MAX)
+#define MAGICK_UINT_MAX  (UINT_MAX)
+#define MAGICK_ULONG_MAX  (ULONG_MAX)
+#define MAGICK_USHORT_MAX  (USHRT_MAX)
 #define MatteColor  "#bdbdbd"  /* gray */
 #define MatteColorRGBA  ScaleShortToQuantum(0xbdbd),\
   ScaleShortToQuantum(0xbdbd),ScaleShortToQuantum(0xbdbd),OpaqueAlpha
@@ -60,11 +59,11 @@ extern "C" {
 #define SaveImagesTag  "Save/Images"
 #define SaveImageTag  "Save/Image"
 #define TransparentColor  "#00000000"  /* transparent black */
-#define TransparentColorRGBA  0,0,0,TransparentAlpha
+#define TransparentColorRGBA  (Quantum) 0,(Quantum) 0,(Quantum) 0,TransparentAlpha
 #define UndefinedCompressionQuality  0UL
 #define UndefinedTicksPerSecond  100L
 
-static inline ssize_t CastDoubleToLong(const double x)
+static inline int CastDoubleToInt(const double x)
 {
   double
     value;
@@ -74,69 +73,162 @@ static inline ssize_t CastDoubleToLong(const double x)
       errno=ERANGE;
       return(0);
     }
-  if (x < 0.0)
-    {
-      value=ceil(x);
-      if (value < ((double) MAGICK_SSIZE_MIN))
-        {
-          errno=ERANGE;
-          return((ssize_t) MAGICK_SSIZE_MIN);
-        }
-    }
-  else
-    {
-      value=floor(x);
-      if (value > ((double) MAGICK_SSIZE_MAX))
-        {
-          errno=ERANGE;
-          return((ssize_t) MAGICK_SSIZE_MAX);
-        }
-    }
-  return((ssize_t) value);
-}
-
-static inline QuantumAny CastDoubleToQuantumAny(const double x)
-{
-  if (IsNaN(x) != 0)
-    {
-      errno=ERANGE;
-      return(0);
-    }
-  if (x > ((double) ((QuantumAny) ~0)))
-    {
-      errno=ERANGE;
-      return((QuantumAny) ~0);
-    }
-  if (x < 0.0)
-    {
-      errno=ERANGE;
-      return((QuantumAny) 0);
-    }
-  return((QuantumAny) (x+0.5));
-}
-
-static inline size_t CastDoubleToUnsigned(const double x)
-{
-  double
-    value;
-
-  if (IsNaN(x) != 0)
-    {
-      errno=ERANGE;
-      return(0);
-    }
-  value=floor(x);
-  if (value >= ((double) MAGICK_SIZE_MAX))
-    {
-      errno=ERANGE;
-      return((size_t) MAGICK_SIZE_MAX);
-    }
+  value=(x < 0.0) ? ceil(x) : floor(x);
   if (value < 0.0)
     {
       errno=ERANGE;
       return(0);
     }
+  if (value >= ((double) MAGICK_INT_MAX))
+    {
+      errno=ERANGE;
+      return(MAGICK_INT_MAX);
+    }
+  return((int) value);
+}
+
+static inline ptrdiff_t CastDoubleToPtrdiffT(const double x)
+{
+  double
+    value;
+
+  if (IsNaN(x) != 0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  value=(x < 0.0) ? ceil(x) : floor(x);
+  if (value < ((double) MAGICK_PTRDIFF_MIN))
+    {
+      errno=ERANGE;
+      return(MAGICK_PTRDIFF_MIN);
+    }
+  if (value >= ((double) MAGICK_PTRDIFF_MAX))
+    {
+      errno=ERANGE;
+      return(MAGICK_PTRDIFF_MAX);
+    }
+  return((ptrdiff_t) value);
+}
+
+static inline size_t CastDoubleToSizeT(const double x)
+{
+  double
+    value;
+
+  if (IsNaN(x) != 0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  value=(x < 0.0) ? ceil(x) : floor(x);
+  if (value < 0.0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  if (value >= ((double) MAGICK_SIZE_MAX))
+    {
+      errno=ERANGE;
+      return(MAGICK_SIZE_MAX);
+    }
   return((size_t) value);
+}
+
+static inline ssize_t CastDoubleToSsizeT(const double x)
+{
+  double
+    value;
+
+  if (IsNaN(x) != 0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  value=(x < 0.0) ? ceil(x) : floor(x);
+  if (value < ((double) MAGICK_SSIZE_MIN))
+    {
+      errno=ERANGE;
+      return((ssize_t) MAGICK_SSIZE_MIN);
+    }
+  if (value >= ((double) MAGICK_SSIZE_MAX))
+    {
+      errno=ERANGE;
+      return((ssize_t) MAGICK_SSIZE_MAX);
+    }
+  return((ssize_t) value);
+}
+
+static inline unsigned char CastDoubleToUChar(const double x)
+{
+  double
+    value;
+
+  if (IsNaN(x) != 0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  value=(x < 0.0) ? ceil(x) : floor(x);
+  if (value < 0.0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  if (value >= ((double) MAGICK_UCHAR_MAX))
+    {
+      errno=ERANGE;
+      return(MAGICK_UCHAR_MAX);
+    }
+  return((unsigned char) value);
+}
+
+static inline unsigned int CastDoubleToUInt(const double x)
+{
+  double
+    value;
+
+  if (IsNaN(x) != 0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  value=(x < 0.0) ? ceil(x) : floor(x);
+  if (value < 0.0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  if (value >= ((double) MAGICK_UINT_MAX))
+    {
+      errno=ERANGE;
+      return(MAGICK_UINT_MAX);
+    }
+  return((unsigned int) value);
+}
+
+static inline unsigned short CastDoubleToUShort(const double x)
+{
+  double
+    value;
+
+  if (IsNaN(x) != 0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  value=(x < 0.0) ? ceil(x) : floor(x);
+  if (value < 0.0)
+    {
+      errno=ERANGE;
+      return(0);
+    }
+  if (value >= ((double) MAGICK_USHORT_MAX))
+    {
+      errno=ERANGE;
+      return(MAGICK_USHORT_MAX);
+    }
+  return((unsigned short) value);
 }
 
 static inline double DegreesToRadians(const double degrees)
@@ -144,24 +236,41 @@ static inline double DegreesToRadians(const double degrees)
   return((double) (MagickPI*degrees/180.0));
 }
 
-static inline size_t GetImageChannels(const Image *image)
+static inline MagickBooleanType IsValidFormatSpecifier(const char *start,
+  const char *end)
 {
-  ssize_t
-    i;
+  char
+    specifier = end[-1];
 
   size_t
-    channels;
+    length = (size_t) (end-start);
 
-  channels=0;
-  for (i=0; i < (ssize_t) GetPixelChannels(image); i++)
-  {
-    PixelChannel channel = GetPixelChannelChannel(image,i);
-    PixelTrait traits = GetPixelChannelTraits(image,channel);
-    if ((traits & UpdatePixelTrait) != 0)
-      channels++;
-  }
-  return(channels == 0 ? (size_t) 1 : channels);
+  /*
+    Is this a valid format specifier?
+  */
+  if ((specifier != 'd') && (specifier != 'x') && (specifier != 'o'))
+    return(MagickFalse);
+  if ((length == 1) && (*start == specifier))
+    return(MagickTrue);
+  if (length >= 2)
+    {
+      size_t
+        i = 0;
+
+      if (*start == '0')
+        {
+          if ((length >= 3) && (start[1] == '0'))
+            return(MagickFalse);
+          i=1;
+        }
+      for ( ; i < (length-1); i++)
+        if (isdigit((int) ((unsigned char) start[i])) == 0)
+          return(MagickFalse);
+      return(MagickTrue);
+    }
+  return(MagickFalse);
 }
+
 
 static inline double RadiansToDegrees(const double radians)
 {

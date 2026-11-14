@@ -74,7 +74,7 @@ extern "C" {
 #endif
 #define DegreesToRadians(x)  (MagickPI*(x)/180.0)
 #define EndOf(array)  (&array[NumberOf(array)])
-#define MagickPI  3.14159265358979323846264338327950288419716939937510
+#define MagickPI  3.1415926535897932384626433832795028841971693993751058209749445923078164062
 #define MaxArguments  35
 #ifndef na
 #define na  PL_na
@@ -906,9 +906,11 @@ static Image *GetList(pTHX_ SV *reference,SV ***reference_vector,
 
       Image
         *head,
-        *previous;
+        *previous,
+        **seen = (Image **) NULL;
 
       ssize_t
+        count = 0,
         i,
         n;
 
@@ -931,17 +933,43 @@ static Image *GetList(pTHX_ SV *reference,SV ***reference_vector,
               exception);
             if (image == (Image *) NULL)
               continue;
-            if (image == previous)
+            {
+              MagickBooleanType duplicate = MagickFalse;
+              ssize_t j = 0;
+              for (j=0; j < count; j++)
               {
-                image=CloneImage(image,0,0,MagickTrue,exception);
-                if (image == (Image *) NULL)
-                  return(NULL);
+                if (seen[j] == image)
+                  {
+                    duplicate=MagickTrue;
+                    break;
+                  }
               }
+              if (duplicate != MagickFalse)
+                {
+                  /*
+                    Clone if already seen (adjacent or non-adjacent).
+                  */
+                  Image *clone = CloneImage(image,0,0,MagickTrue,exception);
+                  if (clone == (Image *) NULL)
+                    {
+                      if (seen != (Image **) NULL)
+                        free(seen);
+                      return(NULL);
+                    }
+                  image=clone;
+                }
+              seen=(Image **) realloc(seen,(count+1)*sizeof(Image *));
+              if (seen == (Image **) NULL)
+                return((Image *) NULL);
+              seen[count++]=image;
+            }
             image->previous=previous;
             *(previous ? &previous->next : &head)=image;
             for (previous=image; previous->next; previous=previous->next) ;
           }
       }
+      if (seen != (Image **) NULL)
+        free(seen);
       return(head);
     }
     case SVt_PVMG:
@@ -980,7 +1008,7 @@ static Image *GetList(pTHX_ SV *reference,SV ***reference_vector,
     default:
       break;
   }
-  (void) fprintf(stderr,"GetList: UnrecognizedType %.20g\n",
+  (void) fprintf(stderr,"GetList: UnrecognizedType %.17g\n",
     (double) SvTYPE(reference));
   return((Image *) NULL);
 }
@@ -1334,9 +1362,13 @@ static void SetAttribute(pTHX_ struct PackageInfo *info,Image *image,
       if (LocaleCompare(attribute,"comment") == 0)
         {
           for ( ; image; image=image->next)
-            (void) SetImageProperty(image,"Comment",InterpretImageProperties(
-              info ? info->image_info : (ImageInfo *) NULL,image,
-              SvPV(sval,na),exception),exception);
+          {
+            char *property = InterpretImageProperties(info ? info->image_info :
+              (ImageInfo *) NULL,image,SvPV(sval,na),exception);
+            (void) SetImageProperty(image,"comment",property,exception);
+            if (property != (char *) NULL)
+              property=(char *) RelinquishMagickMemory(property);
+          }
           break;
         }
       if (LocaleCompare(attribute,"compression") == 0)
@@ -1702,9 +1734,13 @@ static void SetAttribute(pTHX_ struct PackageInfo *info,Image *image,
       if (LocaleCompare(attribute,"label") == 0)
         {
           for ( ; image; image=image->next)
-            (void) SetImageProperty(image,"label",InterpretImageProperties(
-              info ? info->image_info : (ImageInfo *) NULL,image,
-              SvPV(sval,na),exception),exception);
+          {
+            char *property = InterpretImageProperties(info ? info->image_info :
+              (ImageInfo *) NULL,image,SvPV(sval,na),exception);
+            (void) SetImageProperty(image,"label",property,exception);
+            if (property != (char *) NULL)
+              property=(char *) RelinquishMagickMemory(property);
+          }
           break;
         }
       if (LocaleCompare(attribute,"loop") == 0)
@@ -1996,7 +2032,7 @@ static void SetAttribute(pTHX_ struct PackageInfo *info,Image *image,
       if (LocaleNCompare(attribute,"registry:",9) == 0)
         {
           (void) SetImageRegistry(StringRegistryType,attribute+9,SvPV(sval,na),
-            exception); 
+            exception);
           break;
         }
       if (LocaleCompare(attribute,"render") == 0)
@@ -4161,46 +4197,46 @@ Features(ref,...)
   {
 #define ChannelFeatures(channel,direction) \
 { \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].angular_second_moment[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].contrast[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].contrast[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].variance_sum_of_squares[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].inverse_difference_moment[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].sum_average[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].sum_variance[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].sum_entropy[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].entropy[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].difference_variance[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].difference_entropy[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].measure_of_correlation_1[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].measure_of_correlation_2[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_features[channel].maximum_correlation_coefficient[direction]); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
 }
@@ -4745,7 +4781,7 @@ Get(ref,...)
               if (image == (Image *) NULL)
                 break;
               (void) FormatLocaleString(color,MagickPathExtent,
-                "%.20g,%.20g,%.20g,%.20g",(double) image->background_color.red,
+                "%.17g,%.17g,%.17g,%.17g",(double) image->background_color.red,
                 (double) image->background_color.green,
                 (double) image->background_color.blue,
                 (double) image->background_color.alpha);
@@ -4792,7 +4828,7 @@ Get(ref,...)
             {
               if (image == (Image *) NULL)
                 break;
-              (void) FormatLocaleString(color,MagickPathExtent,"%.20g,%.20g",
+              (void) FormatLocaleString(color,MagickPathExtent,"%.17g,%.17g",
                 image->chromaticity.blue_primary.x,
                 image->chromaticity.blue_primary.y);
               s=newSVpv(color,0);
@@ -4804,7 +4840,7 @@ Get(ref,...)
               if (image == (Image *) NULL)
                 break;
               (void) FormatLocaleString(color,MagickPathExtent,
-                "%.20g,%.20g,%.20g,%.20g",(double) image->border_color.red,
+                "%.17g,%.17g,%.17g,%.17g",(double) image->border_color.red,
                 (double) image->border_color.green,
                 (double) image->border_color.blue,
                 (double) image->border_color.alpha);
@@ -4824,7 +4860,7 @@ Get(ref,...)
                 break;
               page=GetImageBoundingBox(image,exception);
               (void) FormatLocaleString(geometry,MagickPathExtent,
-                "%.20gx%.20g%+.20g%+.20g",(double) page.width,(double)
+                "%.17gx%.17g%+.20g%+.20g",(double) page.width,(double)
                 page.height,(double) page.x,(double) page.y);
               s=newSVpv(geometry,0);
               PUSHs(s ? sv_2mortal(s) : &sv_undef);
@@ -4939,7 +4975,7 @@ Get(ref,...)
               if (j > (ssize_t) image->colors)
                 j%=(ssize_t) image->colors;
               (void) FormatLocaleString(color,MagickPathExtent,
-                "%.20g,%.20g,%.20g,%.20g",(double) image->colormap[j].red,
+                "%.17g,%.17g,%.17g,%.17g",(double) image->colormap[j].red,
                 (double) image->colormap[j].green,
                 (double) image->colormap[j].blue,
                 (double) image->colormap[j].alpha);
@@ -4985,7 +5021,7 @@ Get(ref,...)
 
               if (image == (Image *) NULL)
                 break;
-              (void) FormatLocaleString(geometry,MagickPathExtent,"%.20gx%.20g",
+              (void) FormatLocaleString(geometry,MagickPathExtent,"%.17gx%.17g",
                 image->resolution.x,image->resolution.y);
               s=newSVpv(geometry,0);
               PUSHs(s ? sv_2mortal(s) : &sv_undef);
@@ -5179,7 +5215,7 @@ Get(ref,...)
             {
               if (image == (Image *) NULL)
                 break;
-              (void) FormatLocaleString(color,MagickPathExtent,"%.20g,%.20g",
+              (void) FormatLocaleString(color,MagickPathExtent,"%.17g,%.17g",
                 image->chromaticity.green_primary.x,
                 image->chromaticity.green_primary.y);
               s=newSVpv(color,0);
@@ -5250,7 +5286,7 @@ Get(ref,...)
                   static ssize_t
                     id = 0;
 
-                  (void) FormatLocaleString(key,MagickPathExtent,"%.20g\n",(double)
+                  (void) FormatLocaleString(key,MagickPathExtent,"%.17g\n",(double)
                     id);
                   status=SetImageRegistry(ImageRegistryType,key,image,
                     exception);
@@ -5417,7 +5453,7 @@ Get(ref,...)
               if (image == (Image *) NULL)
                 break;
               (void) FormatLocaleString(color,MagickPathExtent,
-                "%.20g,%.20g,%.20g,%.20g",(double) image->alpha_color.red,
+                "%.17g,%.17g,%.17g,%.17g",(double) image->alpha_color.red,
                 (double) image->alpha_color.green,
                 (double) image->alpha_color.blue,
                 (double) image->alpha_color.alpha);
@@ -5510,7 +5546,7 @@ Get(ref,...)
                     geometry[MagickPathExtent];
 
                   (void) FormatLocaleString(geometry,MagickPathExtent,
-                    "%.20gx%.20g%+.20g%+.20g",(double) image->page.width,
+                    "%.17gx%.17g%+.20g%+.20g",(double) image->page.width,
                     (double) image->page.height,(double) image->page.x,(double)
                     image->page.y);
                   s=newSVpv(geometry,0);
@@ -5625,7 +5661,7 @@ Get(ref,...)
             {
               if (image == (Image *) NULL)
                 break;
-              (void) FormatLocaleString(color,MagickPathExtent,"%.20g,%.20g",
+              (void) FormatLocaleString(color,MagickPathExtent,"%.17g,%.17g",
                 image->chromaticity.red_primary.x,
                 image->chromaticity.red_primary.y);
               s=newSVpv(color,0);
@@ -5741,7 +5777,7 @@ Get(ref,...)
               if (image == (Image *) NULL)
                 break;
               (void) FormatLocaleString(color,MagickPathExtent,
-                "%.20g,%.20g,%.20g,%.20g",(double) image->transparent_color.red,
+                "%.17g,%.17g,%.17g,%.17g",(double) image->transparent_color.red,
                 (double) image->transparent_color.green,
                 (double) image->transparent_color.blue,
                 (double) image->transparent_color.alpha);
@@ -5834,7 +5870,7 @@ Get(ref,...)
             {
               if (image == (Image *) NULL)
                 break;
-              (void) FormatLocaleString(color,MagickPathExtent,"%.20g,%.20g",
+              (void) FormatLocaleString(color,MagickPathExtent,"%.17g,%.17g",
                 image->chromaticity.white_point.x,
                 image->chromaticity.white_point.y);
               s=newSVpv(color,0);
@@ -6463,25 +6499,25 @@ Histogram(ref,...)
       EXTEND(sp,6*count);
       for (i=0; i < (ssize_t) number_colors; i++)
       {
-        (void) FormatLocaleString(message,MagickPathExtent,"%.20g",
+        (void) FormatLocaleString(message,MagickPathExtent,"%.17g",
           histogram[i].red);
         PUSHs(sv_2mortal(newSVpv(message,0)));
-        (void) FormatLocaleString(message,MagickPathExtent,"%.20g",
+        (void) FormatLocaleString(message,MagickPathExtent,"%.17g",
           histogram[i].green);
         PUSHs(sv_2mortal(newSVpv(message,0)));
-        (void) FormatLocaleString(message,MagickPathExtent,"%.20g",
+        (void) FormatLocaleString(message,MagickPathExtent,"%.17g",
           histogram[i].blue);
         PUSHs(sv_2mortal(newSVpv(message,0)));
         if (image->colorspace == CMYKColorspace)
           {
-            (void) FormatLocaleString(message,MagickPathExtent,"%.20g",
+            (void) FormatLocaleString(message,MagickPathExtent,"%.17g",
               histogram[i].black);
             PUSHs(sv_2mortal(newSVpv(message,0)));
           }
-        (void) FormatLocaleString(message,MagickPathExtent,"%.20g",
+        (void) FormatLocaleString(message,MagickPathExtent,"%.17g",
           histogram[i].alpha);
         PUSHs(sv_2mortal(newSVpv(message,0)));
-        (void) FormatLocaleString(message,MagickPathExtent,"%.20g",(double)
+        (void) FormatLocaleString(message,MagickPathExtent,"%.17g",(double)
           histogram[i].count);
         PUSHs(sv_2mortal(newSVpv(message,0)));
       }
@@ -7270,7 +7306,7 @@ Layers(ref,...)
         /*
           Split image sequence at the first 'NULL:' image.
         */
-        source=image;
+        source=CloneImageList(image,exception);
         while (source != (Image *) NULL)
         {
           source=GetNextImageInList(source);
@@ -7958,27 +7994,39 @@ Mogrify(ref,...)
       {
         default:
         {
-          (void) FormatLocaleString(message,MagickPathExtent,"%.20g",(double) ix);
+          (void) FormatLocaleString(message,MagickPathExtent,"%.17g",(double) ix);
           ThrowPerlException(exception,OptionError,
             "UnrecognizedPerlMagickMethod",message);
           goto PerlException;
         }
         case 1:  /* Comment */
         {
+          char
+            *property;
+
           if (attribute_flag[0] == 0)
             argument_list[0].string_reference=(char *) NULL;
-          (void) SetImageProperty(image,"comment",InterpretImageProperties(
-            info ? info->image_info : (ImageInfo *) NULL,image,
-            argument_list[0].string_reference,exception),exception);
+          property=InterpretImageProperties(info ? info->image_info :
+            (ImageInfo *) NULL,image,argument_list[0].string_reference,
+            exception);
+          (void) SetImageProperty(image,"comment",property,exception);
+          if (property != (char *) NULL)
+            property=(char *) RelinquishMagickMemory(property);
           break;
         }
         case 2:  /* Label */
         {
+          char
+            *property;
+
           if (attribute_flag[0] == 0)
             argument_list[0].string_reference=(char *) NULL;
-          (void) SetImageProperty(image,"label",InterpretImageProperties(
-            info ? info->image_info : (ImageInfo *) NULL,image,
-            argument_list[0].string_reference,exception),exception);
+          property=InterpretImageProperties(info ? info->image_info :
+            (ImageInfo *) NULL,image,argument_list[0].string_reference,
+            exception);
+          (void) SetImageProperty(image,"label",property,exception);
+          if (property != (char *) NULL)
+            property=(char *) RelinquishMagickMemory(property);
           break;
         }
         case 3:  /* AddNoise */
@@ -8886,8 +8934,8 @@ Mogrify(ref,...)
                   */
                   mask_image=CloneImage(argument_list[10].image_reference,0,0,
                     MagickTrue,exception);
-                  (void) SetImageMask(composite_image,ReadPixelMask,mask_image,
-                    exception);
+                  (void) CompositeImage(composite_image,mask_image,
+                    CopyAlphaCompositeOp,clip_to_self,0,0,exception);
                   mask_image=DestroyImage(mask_image);
                 }
             }
@@ -8897,7 +8945,7 @@ Mogrify(ref,...)
             Composite two images (normal composition).
           */
           (void) FormatLocaleString(composite_geometry,MagickPathExtent,
-            "%.20gx%.20g%+.20g%+.20g",(double) composite_image->columns,
+            "%.17gx%.17g%+.20g%+.20g",(double) composite_image->columns,
             (double) composite_image->rows,(double) geometry.x,(double)
             geometry.y);
           flags=ParseGravityGeometry(image,composite_geometry,&geometry,
@@ -9212,7 +9260,7 @@ Mogrify(ref,...)
           if (attribute_flag[0] == 0)
             {
               (void) FormatLocaleString(message,MagickPathExtent,
-                "%.20g,%.20g,%.20g",(double) argument_list[2].real_reference,
+                "%.17g,%.17g,%.17g",(double) argument_list[2].real_reference,
                 (double) argument_list[3].real_reference,
                 (double) argument_list[4].real_reference);
               argument_list[0].string_reference=message;
@@ -9320,7 +9368,7 @@ Mogrify(ref,...)
               geometry_info.rho=argument_list[6].real_reference;
               SetImageArtifact(image,"modulate:colorspace","HWB");
             }
-          (void) FormatLocaleString(modulate,MagickPathExtent,"%.20g,%.20g,%.20g",
+          (void) FormatLocaleString(modulate,MagickPathExtent,"%.17g,%.17g,%.17g",
             geometry_info.rho,geometry_info.sigma,geometry_info.xi);
           (void) ModulateImage(image,modulate,exception);
           break;
@@ -11890,9 +11938,14 @@ Montage(ref,...)
           if (LocaleCompare(attribute,"label") == 0)
             {
               for (next=image; next; next=next->next)
-                (void) SetImageProperty(next,"label",InterpretImageProperties(
-                  info ? info->image_info : (ImageInfo *) NULL,next,
-                  SvPV(ST(i),na),exception),exception);
+              {
+                char *property = InterpretImageProperties(info ?
+                  info->image_info : (ImageInfo *) NULL,next,SvPV(ST(i),na),
+                  exception);
+                (void) SetImageProperty(next,"label",property,exception);
+                if (property != (char *) NULL)
+                  property=(char *) RelinquishMagickMemory(property);
+              }
               break;
             }
           ThrowPerlException(exception,OptionError,"UnrecognizedAttribute",
@@ -12384,7 +12437,7 @@ PerceptualHash(ref)
 
           for (k=0; k < (ssize_t) channel_phash[0].number_colorspaces; k++)
           {
-            (void) FormatLocaleString(message,MagickPathExtent,"%.20g",
+            (void) FormatLocaleString(message,MagickPathExtent,"%.17g",
               channel_phash[channel].phash[k][j]);
             PUSHs(sv_2mortal(newSVpv(message,0)));
           }
@@ -12949,7 +13002,7 @@ QueryFont(ref,...)
       else
         PUSHs(sv_2mortal(newSVpv(CommandOptionToMnemonic(MagickStretchOptions,
           type_info->stretch),0)));
-      (void) FormatLocaleString(message,MagickPathExtent,"%.20g",(double)
+      (void) FormatLocaleString(message,MagickPathExtent,"%.17g",(double)
         type_info->weight);
       PUSHs(sv_2mortal(newSVpv(message,0)));
       if (type_info->encoding == (char *) NULL)
@@ -13357,7 +13410,7 @@ QueryFontMetrics(ref,...)
       {
         draw_info->geometry=AcquireString((char *) NULL);
         (void) FormatLocaleString(draw_info->geometry,MagickPathExtent,
-          "%.20g,%.20g",x,y);
+          "%.17g,%.17g",x,y);
       }
     status=GetTypeMetrics(image,draw_info,&metrics,exception);
     (void) CatchImageException(image);
@@ -13728,7 +13781,7 @@ QueryMultilineFontMetrics(ref,...)
       {
         draw_info->geometry=AcquireString((char *) NULL);
         (void) FormatLocaleString(draw_info->geometry,MagickPathExtent,
-          "%.20g,%.20g",x,y);
+          "%.17g,%.17g",x,y);
       }
     status=GetMultilineTypeMetrics(image,draw_info,&metrics,exception);
     (void) CatchException(exception);
@@ -13933,7 +13986,7 @@ Read(ref,...)
       **keep,
       **list,
       **p;
-    
+
     ExceptionInfo
       *exception;
 
@@ -14917,28 +14970,28 @@ Statistics(ref,...)
   {
 #define ChannelStatistics(channel) \
 { \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     (double) channel_statistics[channel].depth); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_statistics[channel].minima/QuantumRange); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_statistics[channel].maxima/QuantumRange); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_statistics[channel].mean/QuantumRange); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_statistics[channel].standard_deviation/QuantumRange); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_statistics[channel].kurtosis); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_statistics[channel].skewness); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
-  (void) FormatLocaleString(message,MagickPathExtent,"%.20g", \
+  (void) FormatLocaleString(message,MagickPathExtent,"%.17g", \
     channel_statistics[channel].entropy); \
   PUSHs(sv_2mortal(newSVpv(message,0))); \
 }

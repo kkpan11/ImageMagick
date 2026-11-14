@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -137,11 +137,15 @@ static Image *ReadSCTImage(const ImageInfo *image_info,ExceptionInfo *exception)
   MagickBooleanType
     status;
 
+  MagickSizeType
+    extent;
+
   Quantum
     pixel,
     *q;
 
   size_t
+    number_pixels,
     separations,
     separations_mask,
     units;
@@ -227,6 +231,16 @@ static Image *ReadSCTImage(const ImageInfo *image_info,ExceptionInfo *exception)
       (void) CloseBlob(image);
       return(GetFirstImageInList(image));
     }
+  if (HeapOverflowSanityCheckGetSize(image->columns,image->rows,
+      &number_pixels) != MagickFalse)
+    ThrowReaderException(ResourceLimitError,"MemoryAllocationFailed");
+  extent=(MagickSizeType) number_pixels*separations;
+  if (extent > GetBlobSize(image))
+    {
+      ThrowFileException(exception,CorruptImageError,"UnexpectedEndOfFile",
+        image->filename);
+      return(DestroyImageList(image));
+    }
   status=SetImageExtent(image,image->columns,image->rows,exception);
   if (status == MagickFalse)
     return(DestroyImageList(image));
@@ -276,14 +290,15 @@ static Image *ReadSCTImage(const ImageInfo *image_info,ExceptionInfo *exception)
             break;
           }
         }
-        q+=GetPixelChannels(image);
+        q+=(ptrdiff_t) GetPixelChannels(image);
       }
       if (x < (ssize_t) image->columns)
         break;
       if (SyncAuthenticPixels(image,exception) == MagickFalse)
         break;
       if ((image->columns % 2) != 0)
-        (void) ReadBlobByte(image);  /* pad */
+        if (ReadBlobByte(image) == EOF)  /* pad */
+          break;
     }
     if (i < (ssize_t) separations)
       break;

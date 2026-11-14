@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -178,7 +178,7 @@ static Image *ReadHALDImage(const ImageInfo *image_info,
             image->colormap[index].alpha=OpaqueAlpha;
             SetPixelIndex(image,(Quantum) index++,q);
           }
-        q+=GetPixelChannels(image);
+        q+=(ptrdiff_t) GetPixelChannels(image);
       }
     }
     if (SyncAuthenticPixels(image,exception) == MagickFalse)
@@ -189,8 +189,12 @@ static Image *ReadHALDImage(const ImageInfo *image_info,
   if (status == MagickFalse)
     return(DestroyImageList(image));
   if (image_info->scene != 0)
-    for (i=0; i < (ssize_t) image_info->scene; i++)
-      AppendImageToList(&image,CloneImage(image,0,0,MagickTrue,exception));
+    {
+      if (AcquireMagickResource(ListLengthResource,image_info->scene) == MagickFalse)
+        ThrowReaderException(ResourceLimitError,"ListLengthExceedsLimit");
+      for (i=0; i < (ssize_t) image_info->scene; i++)
+        AppendImageToList(&image,CloneImage(image,0,0,MagickTrue,exception));
+    }
   return(GetFirstImageInList(image));
 }
 

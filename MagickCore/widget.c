@@ -24,7 +24,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -1171,7 +1171,8 @@ static void XEditText(Display *display,XWidgetInfo *text_info,
           q=text_info->text+Extent(text_info->text)+strlen(text);
           for (i=0; i <= Extent(text_info->cursor); i++)
           {
-            *q=(*(q-Extent(text)));
+            if ((q-Extent(text)) > text_info->text)
+              *q=(*(q-Extent(text)));
             q--;
           }
           p=text;
@@ -1866,7 +1867,7 @@ MagickPrivate void XColorBrowserWidget(Display *display,XWindows *windows,
         slider_info.height=(unsigned int) ((int) scroll_info.height-
           ((slider_info.min_y-scroll_info.y+1) << 1)+4);
         visible_colors=(unsigned int) (scroll_info.height*
-          PerceptibleReciprocal((double) height+(height >> 3)));
+          MagickSafeReciprocal((double) height+(height >> 3)));
         if (colors > visible_colors)
           slider_info.height=(unsigned int) ((visible_colors*
             slider_info.height)/colors);
@@ -2992,7 +2993,7 @@ MagickPrivate int XCommandWidget(Display *display,XWindows *windows,
             "MemoryAllocationFailed","...");
           return(id);
         }
-      state|=UpdateConfigurationState | RedrawWidgetState;
+      state|=(int) UpdateConfigurationState | (int) RedrawWidgetState;
     }
   /*
     Wait for next event.
@@ -4485,7 +4486,7 @@ MagickPrivate void XFileBrowserWidget(Display *display,XWindows *windows,
         slider_info.height=(unsigned int) ((int) scroll_info.height-
           ((slider_info.min_y-scroll_info.y+1) << 1)+4);
         visible_files=(unsigned int) (scroll_info.height*
-          PerceptibleReciprocal((double) height+(height >> 3)));
+          MagickSafeReciprocal((double) height+(height >> 3)));
         if (files > visible_files)
           slider_info.height=(unsigned int)
             ((visible_files*slider_info.height)/files);
@@ -5754,7 +5755,7 @@ MagickPrivate void XFontBrowserWidget(Display *display,XWindows *windows,
         slider_info.height=(unsigned int) ((int) scroll_info.height-
           ((slider_info.min_y-scroll_info.y+1) << 1)+4);
         visible_fonts=(unsigned int) (scroll_info.height*
-          PerceptibleReciprocal((double) height+(height >> 3)));
+          MagickSafeReciprocal((double) height+(height >> 3)));
         if (fonts > (int) visible_fonts)
           slider_info.height=(visible_fonts*slider_info.height)/(unsigned int)
             fonts;
@@ -6977,7 +6978,7 @@ MagickPrivate void XListBrowserWidget(Display *display,XWindows *windows,
         slider_info.height=(unsigned int) ((int) scroll_info.height-
           ((slider_info.min_y-scroll_info.y+1) << 1)+4);
         visible_entries=(unsigned int) (scroll_info.height*
-          PerceptibleReciprocal((double) height+(height >> 3)));
+          MagickSafeReciprocal((double) height+(height >> 3)));
         if (entries > visible_entries)
           slider_info.height=(visible_entries*slider_info.height)/entries;
         slider_info.max_y=south_info.y-(int) south_info.bevel_width-(int)
@@ -7772,8 +7773,7 @@ MagickPrivate int XMenuWidget(Display *display,XWindows *windows,
       toggle_info.raised=MagickTrue;
       XDrawTriangleEast(display,&windows->command,&toggle_info);
     }
-  windows->widget.y=submenu_info.active == 0 ? y-(int)
-    ((3*title_height) >> 2) : y;
+  windows->widget.y=submenu_info.active == 0 ? y-(int) (title_height >> 2) : y;
   if (submenu_info.active != 0)
     windows->widget.y=windows->command.y+submenu_info.y;
   XConstrainWindowPosition(display,&windows->widget);
@@ -8029,7 +8029,7 @@ MagickPrivate int XMenuWidget(Display *display,XWindows *windows,
                   if (MatteIsActive(submenu_info,event.xmotion) == MagickFalse)
                     {
                       selection_info.id=(~0);
-                        *item='\0';
+                      *item='\0';
                       state|=ExitState;
                       break;
                     }
@@ -9181,7 +9181,7 @@ MagickPrivate void XTextViewWidget(Display *display,
           north_info.bevel_width+(int) slider_info.bevel_width+2;
         slider_info.height=(unsigned int) ((int) scroll_info.height-
           ((slider_info.min_y-scroll_info.y+1) << 1)+4);
-        visible_lines=(unsigned int) (scroll_info.height*PerceptibleReciprocal(
+        visible_lines=(unsigned int) (scroll_info.height*MagickSafeReciprocal(
           (double) text_info->ascent+text_info->descent+((text_info->ascent+
           text_info->descent) >> 3)));
         if (lines > visible_lines)

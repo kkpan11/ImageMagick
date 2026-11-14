@@ -17,13 +17,13 @@
 %                                 July 2001                                   %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2001 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -178,10 +178,10 @@ static int stringnicmp(const char *p,const char *q,size_t n)
       break;
     i=(*p);
     if (islower((int) ((unsigned char) i)) != 0)
-      i=LocaleToUppercase(i);
+      i=LocaleToUppercase((int) i);
     j=(*q);
     if (islower((int) ((unsigned char) j)) != 0)
-      j=LocaleToUppercase(j);
+      j=LocaleToUppercase((int) j);
     if (i != j)
       break;
     n--;
@@ -213,7 +213,7 @@ static size_t convertHTMLcodes(char *s)
       }
   if ((length == 0) || (s == (char *) NULL) || (*s == '\0'))
     return(0);
-  if ((length > 3) && (s[1] == '#') && (sscanf(s,"&#%d;",&value) == 1))
+  if ((length > 3) && (s[1] == '#') && (MagickSscanf(s,"&#%d;",&value) == 1))
     {
       size_t
         o;
@@ -227,7 +227,7 @@ static size_t convertHTMLcodes(char *s)
       }
       if (o < 6)
         (void) memmove(s+1,s+1+o,strlen(s+1+o)+1);
-      *s=value;
+      *s=(char) value;
       return(o);
     }
   for (i=0; i < (ssize_t) (sizeof(html_codes)/sizeof(html_codes[0])); i++)
@@ -273,11 +273,9 @@ static char *super_fgets(char **b, size_t *blen, Image *file)
         tlen=(size_t) (q-p);
         len<<=1;
         buffer=(unsigned char *) ResizeQuantumMemory(p,len+2UL,sizeof(*p));
+        p=(unsigned char *) NULL;
         if (buffer == (unsigned char *) NULL)
-          {
-            p=(unsigned char *) RelinquishMagickMemory(p);
-            break;
-          }
+          break;
         p=buffer;
         q=p+tlen;
       }
@@ -316,6 +314,9 @@ static ssize_t parse8BIM(Image *ifile, Image *ofile)
     state,
     next;
 
+  MagickBooleanType
+    status;
+
   MagickOffsetType
     savedpos,
     currentpos;
@@ -343,6 +344,7 @@ static ssize_t parse8BIM(Image *ifile, Image *ofile)
     return(-1);
   newstr = name = token = (char *) NULL;
   savedpos = 0;
+  status=MagickTrue;
   token_info=AcquireTokenInfo();
   while (super_fgets(&line,&inputlen,ifile)!=NULL)
   {
@@ -439,21 +441,21 @@ static ssize_t parse8BIM(Image *ifile, Image *ofile)
                     currentpos = TellBlob(ofile);
                     if (currentpos < 0)
                       {
-                        line=DestroyString(line);
-                        return(-1);
+                        status=MagickFalse;
+                        break;
                       }
                     offset=SeekBlob(ofile,savedpos,SEEK_SET);
                     if (offset < 0)
                       {
-                        line=DestroyString(line);
-                        return(-1);
+                        status=MagickFalse;
+                        break;
                       }
                     (void) WriteBlobMSBLong(ofile,(unsigned int) diff);
                     offset=SeekBlob(ofile,currentpos,SEEK_SET);
                     if (offset < 0)
                       {
-                        line=DestroyString(line);
-                        return(-1);
+                        status=MagickFalse;
+                        break;
                       }
                     savedolen = 0L;
                   }
@@ -498,7 +500,10 @@ static ssize_t parse8BIM(Image *ifile, Image *ofile)
                     /* patch in a fake length for now and fix it later */
                     savedpos = TellBlob(ofile);
                     if (savedpos < 0)
-                      return(-1);
+                      {
+                        status=MagickFalse;
+                        break;
+                      }
                     (void) WriteBlobMSBLong(ofile,0xFFFFFFFFU);
                     outputlen += 4;
                     savedolen = outputlen;
@@ -528,6 +533,8 @@ static ssize_t parse8BIM(Image *ifile, Image *ofile)
       newstr=DestroyString(newstr);
     if (name != (char *) NULL)
       name=DestroyString(name);
+    if (status == MagickFalse)
+      break;
   }
   token_info=DestroyTokenInfo(token_info);
   if (token != (char *) NULL)
@@ -556,7 +563,7 @@ static ssize_t parse8BIM(Image *ifile, Image *ofile)
         return(-1);
       savedolen = 0L;
     }
-  return outputlen;
+  return(status == MagickFalse ? -1 : outputlen);
 }
 
 static char *super_fgets_w(char **b, size_t *blen, Image *file)
@@ -591,6 +598,7 @@ static char *super_fgets_w(char **b, size_t *blen, Image *file)
         tlen=(size_t) (q-p);
         len<<=1;
         buffer=(unsigned char *) ResizeQuantumMemory(p,len+2,sizeof(*p));
+        p=(unsigned char *) NULL;
         if (buffer == (unsigned char *) NULL)
           break;
         p=buffer;
@@ -600,7 +608,7 @@ static char *super_fgets_w(char **b, size_t *blen, Image *file)
   }
   *b=(char *) p;
   *blen=0;
-  if ((*b) != (char *) NULL)
+  if (p != (unsigned char *) NULL)
     {
       size_t
         tlen;
@@ -641,6 +649,9 @@ static ssize_t parse8BIMW(Image *ifile, Image *ofile)
     savedolen = 0L,
     outputlen = 0L;
 
+  MagickBooleanType
+    status;
+
   MagickOffsetType
     savedpos,
     currentpos;
@@ -656,6 +667,7 @@ static ssize_t parse8BIMW(Image *ifile, Image *ofile)
   newstr = name = token = (char *) NULL;
   savedpos = 0;
   token_info=AcquireTokenInfo();
+  status=MagickTrue;
   while (super_fgets_w(&line,&inputlen,ifile) != NULL)
   {
     state=0;
@@ -745,17 +757,28 @@ static ssize_t parse8BIMW(Image *ifile, Image *ofile)
                     MagickOffsetType
                       offset;
 
-                    ssize_t diff = outputlen - savedolen;
+                    ssize_t
+                      diff = outputlen - savedolen;
+
                     currentpos = TellBlob(ofile);
                     if (currentpos < 0)
-                      return(-1);
+                      {
+                        status=MagickFalse;
+                        break;
+                      }
                     offset=SeekBlob(ofile,savedpos,SEEK_SET);
                     if (offset < 0)
-                      return(-1);
+                      {
+                        status=MagickFalse;
+                        break;
+                      }
                     (void) WriteBlobMSBLong(ofile,(unsigned int) diff);
                     offset=SeekBlob(ofile,currentpos,SEEK_SET);
                     if (offset < 0)
-                      return(-1);
+                      {
+                        status=MagickFalse;
+                        break;
+                      }
                     savedolen = 0L;
                   }
                 if (outputlen & 1)
@@ -785,7 +808,7 @@ static ssize_t parse8BIMW(Image *ifile, Image *ofile)
 
                     n=0;
                     outputlen += len;
-                    while (len--)
+                    while (len-- > 0)
                       (void) WriteBlobByte(ofile,(unsigned char) token[n++]);
 
                     if (outputlen & 1)
@@ -799,7 +822,10 @@ static ssize_t parse8BIMW(Image *ifile, Image *ofile)
                     /* patch in a fake length for now and fix it later */
                     savedpos = TellBlob(ofile);
                     if (savedpos < 0)
-                      return(-1);
+                      {
+                        status=MagickFalse;
+                        break;
+                      }
                     (void) WriteBlobMSBLong(ofile,0xFFFFFFFFU);
                     outputlen += 4;
                     savedolen = outputlen;
@@ -816,7 +842,7 @@ static ssize_t parse8BIMW(Image *ifile, Image *ofile)
                     outputlen += 5;
                     n=0;
                     outputlen += len;
-                    while (len--)
+                    while (len-- > 0)
                       (void) WriteBlobByte(ofile,(unsigned char) token[n++]);
                   }
               }
@@ -829,6 +855,8 @@ static ssize_t parse8BIMW(Image *ifile, Image *ofile)
       newstr=DestroyString(newstr);
     if (name != (char *) NULL)
       name=DestroyString(name);
+    if (status == MagickFalse)
+      break;
   }
   token_info=DestroyTokenInfo(token_info);
   if (token != (char *) NULL)
@@ -857,7 +885,7 @@ static ssize_t parse8BIMW(Image *ifile, Image *ofile)
         return(-1);
       savedolen = 0L;
     }
-  return(outputlen);
+  return(status == MagickFalse ? -1 : outputlen);
 }
 
 /* some defines for the different JPEG block types */
@@ -1305,12 +1333,17 @@ static Image *ReadMETAImage(const ImageInfo *image_info,
             }
           AttachBlob(iptc->blob,GetStringInfoDatum(profile),
             GetStringInfoLength(profile));
+          profile->datum=(unsigned char *) NULL;
+          profile->length=0;
+          profile=DestroyStringInfo(profile);
           result=jpeg_embed(image,buff,iptc);
           blob=(unsigned char *) DetachBlob(iptc->blob);
           blob=(unsigned char *) RelinquishMagickMemory(blob);
           iptc=DestroyImage(iptc);
           if (result == 0)
             {
+              blob=(unsigned char *) DetachBlob(buff->blob);
+              blob=(unsigned char *) RelinquishMagickMemory(blob);
               buff=DestroyImage(buff);
               ThrowReaderException(CoderError,"JPEGEmbeddingFailed");
             }
@@ -1595,6 +1628,8 @@ static size_t GetIPTCStream(unsigned char **info,size_t length)
 
   p=(*info);
   extent=length;
+  if (extent < 2)
+    return(0);
   if ((*p == 0x1c) && (*(p+1) == 0x02))
     return(length);
   /*
@@ -1604,23 +1639,23 @@ static size_t GetIPTCStream(unsigned char **info,size_t length)
   {
     if (strncmp((const char *) p,"8BIM",4))
       break;
-    p+=4;
+    p+=(ptrdiff_t) 4;
     extent-=4;
     marker=(unsigned int) (*p) << 8 | *(p+1);
-    p+=2;
+    p+=(ptrdiff_t) 2;
     extent-=2;
     c=*p++;
     extent--;
     c|=0x01;
     if ((size_t) c >= extent)
       break;
-    p+=c;
+    p+=(ptrdiff_t) c;
     extent=(size_t) ((ssize_t) extent-c);
     if (extent < 4)
       break;
     tag_length=(((size_t) *p) << 24) | (((size_t) *(p+1)) << 16) |
       (((size_t) *(p+2)) << 8) | ((size_t) *(p+3));
-    p+=4;
+    p+=(ptrdiff_t) 4;
     extent-=4;
     if (tag_length > extent)
       break;
@@ -1630,8 +1665,12 @@ static size_t GetIPTCStream(unsigned char **info,size_t length)
         return(tag_length);
       }
     if ((tag_length & 0x01) != 0)
-      tag_length++;
-    p+=tag_length;
+      {
+        tag_length++;
+        if (tag_length > extent)
+          break;
+      }
+    p+=(ptrdiff_t) tag_length;
     extent-=tag_length;
   }
   /*
@@ -1726,9 +1765,9 @@ iptc_find:
         info_length++;
         tag_length|=(unsigned int) c;
       }
-    if (tag_length > (length+1))
+    if (tag_length > length)
       break;
-    p+=tag_length;
+    p+=(ptrdiff_t) tag_length;
     length-=tag_length;
     if (length == 0)
       break;
@@ -1844,14 +1883,13 @@ static const tag_spec tags[] = {
   { 219, "Custom Field 20" }
 };
 
-static int formatIPTC(Image *ifile, Image *ofile)
+static void formatIPTC(Image *ifile, Image *ofile)
 {
   char
     temp[MagickPathExtent];
 
   unsigned int
-    foundiptc,
-    tagsfound;
+    foundiptc;
 
   unsigned char
     recnum,
@@ -1873,9 +1911,8 @@ static int formatIPTC(Image *ifile, Image *ofile)
     c;
 
   foundiptc = 0; /* found the IPTC-Header */
-  tagsfound = 0; /* number of tags found */
 
-  c = ReadBlobByte(ifile);
+  c=ReadBlobByte(ifile);
   while (c != EOF)
   {
     if (c == 0x1c)
@@ -1883,22 +1920,22 @@ static int formatIPTC(Image *ifile, Image *ofile)
     else
       {
         if (foundiptc)
-          return(-1);
+          return;
         else
           {
-            c=0;
+            c=ReadBlobByte(ifile);
             continue;
           }
       }
 
     /* we found the 0x1c tag and now grab the dataset and record number tags */
-    c = ReadBlobByte(ifile);
+    c=ReadBlobByte(ifile);
     if (c == EOF)
-      return(-1);
+      return;
     dataset = (unsigned char) c;
-    c = ReadBlobByte(ifile);
+    c=ReadBlobByte(ifile);
     if (c == EOF)
-      return(-1);
+      return;
     recnum = (unsigned char) c;
     /* try to match this record to one of the ones in our named table */
     for (i=0; i< tagcount; i++)
@@ -1915,9 +1952,9 @@ static int formatIPTC(Image *ifile, Image *ofile)
     */
     c=ReadBlobByte(ifile);
     if (c == EOF)
-      return(-1);
+      return;
     if (c & (unsigned char) 0x80)
-      return(0);
+      return;
     else
       {
         int
@@ -1925,23 +1962,23 @@ static int formatIPTC(Image *ifile, Image *ofile)
 
         c0=ReadBlobByte(ifile);
         if (c0 == EOF)
-          return(-1);
+          return;
         taglen = (c << 8) | c0;
       }
     if (taglen < 0)
-      return(-1);
+      return;
     /* make a buffer to hold the tag datand snag it from the input stream */
     str=(unsigned char *) AcquireQuantumMemory((size_t) (taglen+
       MagickPathExtent),sizeof(*str));
     if (str == (unsigned char *) NULL)
-      return(0);
+      return;
     for (tagindx=0; tagindx<taglen; tagindx++)
     {
       c=ReadBlobByte(ifile);
       if (c == EOF)
         {
           str=(unsigned char *) RelinquishMagickMemory(str);
-          return(-1);
+          return;
         }
       str[tagindx] = (unsigned char) c;
     }
@@ -1957,12 +1994,8 @@ static int formatIPTC(Image *ifile, Image *ofile)
     (void) WriteBlobString(ofile,temp);
     formatString( ofile, (char *)str, taglen );
     str=(unsigned char *) RelinquishMagickMemory(str);
-
-    tagsfound++;
-
     c=ReadBlobByte(ifile);
   }
-  return((int) tagsfound);
 }
 
 static int readWordFromBuffer(char **s, ssize_t *len)

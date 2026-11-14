@@ -17,13 +17,13 @@
 %                            Christopher R. Hawks                             %
 %                               December 2001                                 %
 %                                                                             %
-%  Copyright @ 2001 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -310,8 +310,6 @@ static Image *ReadPALMImage(const ImageInfo *image_info,
     image->rows=ReadBlobMSBShort(image);
     if (EOFBlob(image) != MagickFalse)
       ThrowReaderException(CorruptImageError,"ImproperImageHeader");
-    if ((image->columns == 0) || (image->rows == 0))
-      ThrowReaderException(CorruptImageError,"NegativeOrZeroImageSize");
     status=SetImageExtent(image,image->columns,image->rows,exception);
     if (status == MagickFalse)
       return(DestroyImageList(image));
@@ -498,7 +496,7 @@ static Image *ReadPALMImage(const ImageInfo *image_info,
             SetPixelBlue(image,(Quantum) ((QuantumRange*((color16 >> 0) &
               0x1f))/0x1f),q);
             SetPixelAlpha(image,OpaqueAlpha,q);
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
         }
       else
@@ -523,7 +521,7 @@ static Image *ReadPALMImage(const ImageInfo *image_info,
                 ptr++;
                 bit=(int) (8-bits_per_pixel);
               }
-            q+=GetPixelChannels(image);
+            q+=(ptrdiff_t) GetPixelChannels(image);
           }
           if (SyncAuthenticPixels(image,exception) == MagickFalse)
             break;
@@ -535,6 +533,8 @@ static Image *ReadPALMImage(const ImageInfo *image_info,
             if (status == MagickFalse)
               break;
           }
+        if (EOFBlob(image) != MagickFalse)
+          break;
       }
     if (flags & PALM_HAS_TRANSPARENCY_FLAG)
       {
@@ -701,9 +701,6 @@ static MagickBooleanType WritePALMImage(const ImageInfo *image_info,
     offset,
     scene;
 
-  MagickSizeType
-    cc;
-
   PixelInfo
     transpix;
 
@@ -865,7 +862,7 @@ static MagickBooleanType WritePALMImage(const ImageInfo *image_info,
             {
               SetPixelIndex(image,(Quantum) FindColor(&image->colormap[(ssize_t)
                 GetPixelIndex(image,q)]),q);
-              q+=GetPixelChannels(image);
+              q+=(ptrdiff_t) GetPixelChannels(image);
             }
           }
           affinity_image=DestroyImage(affinity_image);
@@ -918,7 +915,7 @@ static MagickBooleanType WritePALMImage(const ImageInfo *image_info,
               }
             *ptr++=(unsigned char) ((color16 >> 8) & 0xff);
             *ptr++=(unsigned char) (color16 & 0xff);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
         }
       else
@@ -941,7 +938,7 @@ static MagickBooleanType WritePALMImage(const ImageInfo *image_info,
                 byte=0x00;
                 bit=(unsigned char) (8-bits_per_pixel);
               }
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           if ((image->columns % (8/bits_per_pixel)) != 0)
             *ptr++=byte;
@@ -1018,8 +1015,7 @@ static MagickBooleanType WritePALMImage(const ImageInfo *image_info,
     if (GetNextImageInList(image) == (Image *) NULL)
       break;
     /* padding to 4 byte word */
-    for (cc=(GetBlobSize(image)) % 4; cc > 0; cc--)
-      (void) WriteBlobByte(image,0);
+    (void) WriteBlobPadding(image,(size_t) (GetBlobSize(image) % 4),'\0');
     /* write nextDepthOffset and return to end of image */
     offset=SeekBlob(image,currentOffset+10,SEEK_SET);
     nextDepthOffset=(size_t) (((MagickOffsetType) GetBlobSize(image)-

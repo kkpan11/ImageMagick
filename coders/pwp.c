@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -56,6 +56,7 @@
 #include "MagickCore/quantum-private.h"
 #include "MagickCore/static.h"
 #include "MagickCore/string_.h"
+#include "MagickCore/utility-private.h"
 #include "MagickCore/module.h"
 
 /*
@@ -215,7 +216,7 @@ static Image *ReadPWPImage(const ImageInfo *image_info,ExceptionInfo *exception)
     */
     file=(FILE *) NULL;
     if (unique_file != -1)
-      file=fdopen(unique_file,"wb");
+      file=fdopen(unique_file,"rb+");
     if ((unique_file == -1) || (file == (FILE *) NULL))
       {
         (void) RelinquishUniqueFileResource(filename);
@@ -227,7 +228,7 @@ static Image *ReadPWPImage(const ImageInfo *image_info,ExceptionInfo *exception)
       }
     length=fwrite("SFW94A",1,6,file);
     (void) length;
-    filesize=65535UL*magick[2]+256L*magick[1]+magick[0];
+    filesize=65535*magick[2]+256L*magick[1]+magick[0];
     for (i=0; i < (ssize_t) filesize; i++)
     {
       c=ReadBlobByte(pwp_image);
@@ -236,13 +237,15 @@ static Image *ReadPWPImage(const ImageInfo *image_info,ExceptionInfo *exception)
       if (fputc(c,file) != c)
         break;
     }
-    (void) fclose(file);
+    if (fseek(file,0,SEEK_SET) != 0)
+      ThrowReaderException(FileOpenError,"UnableToCreateTemporaryFile");
     if (c == EOF)
       {
         (void) RelinquishUniqueFileResource(filename);
         read_info=DestroyImageInfo(read_info);
         ThrowReaderException(CorruptImageError,"UnexpectedEndOfFile");
       }
+    read_info->file=file;
     next_image=ReadImage(read_info,exception);
     if (next_image == (Image *) NULL)
       break;
@@ -269,7 +272,7 @@ static Image *ReadPWPImage(const ImageInfo *image_info,ExceptionInfo *exception)
       break;
   }
   if (unique_file != -1)
-    (void) close(unique_file);
+    (void) close_utf8(unique_file);
   (void) RelinquishUniqueFileResource(filename);
   read_info=DestroyImageInfo(read_info);
   if (image != (Image *) NULL)

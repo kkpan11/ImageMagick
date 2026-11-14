@@ -17,13 +17,13 @@
 %                               January 2010                                  %
 %                                                                             %
 %                                                                             %
-%  Copyright @ 2010 ImageMagick Studio LLC, a non-profit organization         %
+%  Copyright @ 1999 ImageMagick Studio LLC, a non-profit organization         %
 %  dedicated to making software imaging solutions freely available.           %
 %                                                                             %
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -92,19 +92,12 @@
 #define Maximize(assign,value) assign=MagickMax(assign,value)
 
 /* Integer Factorial Function - for a Binomial kernel */
-#if 1
 static inline size_t fact(size_t n)
 {
   size_t f,l;
   for(f=1, l=2; l <= n; f=f*l, l++);
   return(f);
 }
-#elif 1 /* glibc floating point alternatives */
-#define fact(n) ((size_t)tgamma((double)n+1))
-#else
-#define fact(n) ((size_t)lgamma((double)n+1))
-#endif
-
 
 /* Currently these are only internal to this module */
 static void
@@ -207,6 +200,19 @@ static inline KernelInfo *LastKernelInfo(KernelInfo *kernel)
 %
 */
 
+static inline MagickBooleanType AcquireKernelValues(KernelInfo *kernel)
+{
+  size_t 
+    elements;
+
+  kernel->values=(MagickRealType *) NULL;
+  if (HeapOverflowSanityCheckGetSize(kernel->width,kernel->height,&elements) != MagickFalse)
+    return(MagickFalse);
+  kernel->values=(MagickRealType *) MagickAssumeAligned(AcquireAlignedMemory(
+    elements,sizeof(*kernel->values)));
+  return(kernel->values == (MagickRealType *) NULL ? MagickFalse : MagickTrue);
+}
+
 /* This was separated so that it could be used as a separate
 ** array input handling function, such as for -color-matrix
 */
@@ -233,6 +239,9 @@ static KernelInfo *ParseKernelArray(const char *kernel_string)
 
   GeometryInfo
     args;
+
+  size_t
+    length;
 
   kernel=(KernelInfo *) AcquireMagickMemory(sizeof(*kernel));
   if (kernel == (KernelInfo *) NULL)
@@ -261,8 +270,9 @@ static KernelInfo *ParseKernelArray(const char *kernel_string)
   if ( p != (char *) NULL && p < end)
     {
       /* ParseGeometry() needs the geometry separated! -- Arrgghh */
-      (void) memcpy(token, kernel_string, (size_t) (p-kernel_string));
-      token[p-kernel_string] = '\0';
+      length=MagickMin((size_t) (p-kernel_string),sizeof(token)-1);
+      (void) memcpy(token, kernel_string, length);
+      token[length] = '\0';
       SetGeometryInfo(&args);
       flags = ParseGeometry(token, &args);
 
@@ -273,8 +283,8 @@ static KernelInfo *ParseKernelArray(const char *kernel_string)
          args.rho = 1.0;               /* then  width = 1 */
       if ( args.sigma < 1.0 )          /* if height too small */
         args.sigma = args.rho;         /* then  height = width */
-      kernel->width = (size_t)args.rho;
-      kernel->height = (size_t)args.sigma;
+      kernel->width = CastDoubleToSizeT(args.rho);
+      kernel->height = CastDoubleToSizeT(args.sigma);
 
       /* Offset Handling and Checks */
       if ( args.xi  < 0.0 || args.psi < 0.0 )
@@ -302,7 +312,7 @@ static KernelInfo *ParseKernelArray(const char *kernel_string)
           (void) GetNextToken(p,&p,MagickPathExtent,token);
       }
       /* set the size of the kernel - old sized square */
-      kernel->width = kernel->height= (size_t) sqrt((double) i+1.0);
+      kernel->width = kernel->height=CastDoubleToSizeT(sqrt((double) i+1.0));
       kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
       p=(const char *) kernel_string;
       while ((isspace((int) ((unsigned char) *p)) != 0) || (*p == '\''))
@@ -310,9 +320,7 @@ static KernelInfo *ParseKernelArray(const char *kernel_string)
     }
 
   /* Read in the kernel values from rest of input string argument */
-  kernel->values=(MagickRealType *) MagickAssumeAligned(AcquireAlignedMemory(
-    kernel->width,kernel->height*sizeof(*kernel->values)));
-  if (kernel->values == (MagickRealType *) NULL)
+  if (AcquireKernelValues(kernel) == MagickFalse)
     return(DestroyKernelInfo(kernel));
   kernel->minimum=MagickMaximumValue;
   kernel->maximum=(-MagickMaximumValue);
@@ -388,6 +396,9 @@ static KernelInfo *ParseKernelName(const char *kernel_string,
   MagickStatusType
     flags;
 
+  size_t
+    length;
+
   ssize_t
     type;
 
@@ -406,8 +417,9 @@ static KernelInfo *ParseKernelName(const char *kernel_string,
     end = strchr(p, '\0');
 
   /* ParseGeometry() needs the geometry separated! -- Arrgghh */
-  (void) memcpy(token, p, (size_t) (end-p));
-  token[end-p] = '\0';
+  length=MagickMin((size_t) (end-p),sizeof(token)-1);
+  (void) memcpy(token, p, length);
+  token[length] = '\0';
   SetGeometryInfo(&args);
   flags = ParseGeometry(token, &args);
 
@@ -968,7 +980,7 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
   switch(type) {
     case UndefinedKernel:    /* These should not call this function */
     case UserDefinedKernel:
-      ThrowMagickException(exception,GetMagickModule(),OptionWarning,
+      (void) ThrowMagickException(exception,GetMagickModule(),OptionWarning,
         "InvalidOption","`%s'","Should not call this function");
       return((KernelInfo *) NULL);
     case LaplacianKernel:   /* Named Discrete Convolution Kernels */
@@ -1051,17 +1063,14 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
           A, B, R;
 
         if ( args->rho >= 1.0 )
-          kernel->width = (size_t)args->rho*2+1;
+          kernel->width = CastDoubleToSizeT(args->rho)*2+1;
         else if ( (type != DoGKernel) || (sigma >= sigma2) )
           kernel->width = GetOptimalKernelWidth2D(args->rho,sigma);
         else
           kernel->width = GetOptimalKernelWidth2D(args->rho,sigma2);
         kernel->height = kernel->width;
         kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
-        kernel->values=(MagickRealType *) MagickAssumeAligned(
-          AcquireAlignedMemory(kernel->width,kernel->height*
-          sizeof(*kernel->values)));
-        if (kernel->values == (MagickRealType *) NULL)
+        if (AcquireKernelValues(kernel) == MagickFalse)
           return(DestroyKernelInfo(kernel));
 
         /* WARNING: The following generates a 'sampled gaussian' kernel.
@@ -1143,17 +1152,14 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
           alpha, beta;
 
         if ( args->rho >= 1.0 )
-          kernel->width = (size_t)args->rho*2+1;
+          kernel->width = CastDoubleToSizeT(args->rho)*2+1;
         else
           kernel->width = GetOptimalKernelWidth1D(args->rho,sigma);
         kernel->height = 1;
         kernel->x = (ssize_t) (kernel->width-1)/2;
         kernel->y = 0;
         kernel->negative_range = kernel->positive_range = 0.0;
-        kernel->values=(MagickRealType *) MagickAssumeAligned(
-          AcquireAlignedMemory(kernel->width,kernel->height*
-          sizeof(*kernel->values)));
-        if (kernel->values == (MagickRealType *) NULL)
+        if (AcquireKernelValues(kernel) == MagickFalse)
           return(DestroyKernelInfo(kernel));
 
 #if 1
@@ -1233,14 +1239,11 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
         if ( args->rho < 1.0 )
           kernel->width = (GetOptimalKernelWidth1D(args->rho,sigma)-1)/2+1;
         else
-          kernel->width = (size_t)args->rho;
+          kernel->width = CastDoubleToSizeT(args->rho);
         kernel->x = kernel->y = 0;
         kernel->height = 1;
         kernel->negative_range = kernel->positive_range = 0.0;
-        kernel->values=(MagickRealType *) MagickAssumeAligned(
-          AcquireAlignedMemory(kernel->width,kernel->height*
-          sizeof(*kernel->values)));
-        if (kernel->values == (MagickRealType *) NULL)
+        if (AcquireKernelValues(kernel) == MagickFalse)
           return(DestroyKernelInfo(kernel));
 
         /* A comet blur is half a 1D gaussian curve, so that the object is
@@ -1296,27 +1299,33 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
       }
     case BinomialKernel:
       {
+        const size_t
+          max_order = (sizeof(size_t) > 4) ? 20 : 12;
+
         size_t
           order_f;
 
         if (args->rho < 1.0)
           kernel->width = kernel->height = 3;  /* default radius = 1 */
         else
-          kernel->width = kernel->height = ((size_t)args->rho)*2+1;
+          kernel->width = kernel->height = CastDoubleToSizeT(args->rho)*2+1;
         kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
+
+          /* Check if kernel order (width-1) would overflow fact() */
+        if ((kernel->width-1) > max_order)
+          return(DestroyKernelInfo(kernel));
 
         order_f = fact(kernel->width-1);
 
-        kernel->values=(MagickRealType *) MagickAssumeAligned(
-          AcquireAlignedMemory(kernel->width,kernel->height*
-          sizeof(*kernel->values)));
-        if (kernel->values == (MagickRealType *) NULL)
+        if (AcquireKernelValues(kernel) == MagickFalse)
           return(DestroyKernelInfo(kernel));
 
         /* set all kernel values within diamond area to scale given */
         for ( i=0, v=0; v < (ssize_t)kernel->height; v++)
-          { size_t
+          {
+            size_t
               alpha = order_f / ( fact((size_t) v) * fact(kernel->height-(size_t) v-1) );
+
             for ( u=0; u < (ssize_t)kernel->width; u++, i++)
               kernel->positive_range += kernel->values[i] = (double)
                 (alpha * order_f / ( fact((size_t) u) * fact(kernel->height-(size_t) u-1) ));
@@ -1539,13 +1548,10 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
         if (args->rho < 1.0)
           kernel->width = kernel->height = 3;  /* default radius = 1 */
         else
-          kernel->width = kernel->height = ((size_t)args->rho)*2+1;
+          kernel->width = kernel->height = CastDoubleToSizeT(args->rho)*2+1;
         kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
 
-        kernel->values=(MagickRealType *) MagickAssumeAligned(
-          AcquireAlignedMemory(kernel->width,kernel->height*
-          sizeof(*kernel->values)));
-        if (kernel->values == (MagickRealType *) NULL)
+        if (AcquireKernelValues(kernel) == MagickFalse)
           return(DestroyKernelInfo(kernel));
 
         /* set all kernel values within diamond area to scale given */
@@ -1567,7 +1573,7 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
             if (args->rho < 1.0)
               kernel->width = kernel->height = 3;  /* default radius = 1 */
             else
-              kernel->width = kernel->height = (size_t) (2*args->rho+1);
+              kernel->width = kernel->height = CastDoubleToSizeT(args->rho*2+1);
             kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
             scale = args->sigma;
           }
@@ -1575,19 +1581,16 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
             /* NOTE: user defaults set in "AcquireKernelInfo()" */
             if ( args->rho < 1.0 || args->sigma < 1.0 )
               return(DestroyKernelInfo(kernel));    /* invalid args given */
-            kernel->width = (size_t)args->rho;
-            kernel->height = (size_t)args->sigma;
-            if ( args->xi  < 0.0 || args->xi  > (double)kernel->width ||
-                 args->psi < 0.0 || args->psi > (double)kernel->height )
+            kernel->width = CastDoubleToSizeT(args->rho);
+            kernel->height = CastDoubleToSizeT(args->sigma);
+            if ((args->xi < 0.0) || (args->xi  >= (double) kernel->width) ||
+                (args->psi < 0.0) || (args->psi >= (double) kernel->height))
               return(DestroyKernelInfo(kernel));    /* invalid args given */
             kernel->x = (ssize_t) args->xi;
             kernel->y = (ssize_t) args->psi;
             scale = 1.0;
           }
-        kernel->values=(MagickRealType *) MagickAssumeAligned(
-          AcquireAlignedMemory(kernel->width,kernel->height*
-          sizeof(*kernel->values)));
-        if (kernel->values == (MagickRealType *) NULL)
+        if (AcquireKernelValues(kernel) == MagickFalse)
           return(DestroyKernelInfo(kernel));
 
         /* set all kernel values to scale given */
@@ -1603,13 +1606,10 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
           if (args->rho < 1.0)
             kernel->width = kernel->height = 5;  /* default radius = 2 */
           else
-            kernel->width = kernel->height = ((size_t)args->rho)*2+1;
+            kernel->width = kernel->height = CastDoubleToSizeT(args->rho)*2+1;
           kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
 
-          kernel->values=(MagickRealType *) MagickAssumeAligned(
-            AcquireAlignedMemory(kernel->width,kernel->height*
-            sizeof(*kernel->values)));
-          if (kernel->values == (MagickRealType *) NULL)
+          if (AcquireKernelValues(kernel) == MagickFalse)
             return(DestroyKernelInfo(kernel));
 
           for ( i=0, v=-kernel->y; v <= (ssize_t)kernel->y; v++)
@@ -1630,13 +1630,10 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
           if (args->rho < 0.4)           /* default radius approx 4.3 */
             kernel->width = kernel->height = 9L, limit = 18L;
           else
-            kernel->width = kernel->height = (size_t)fabs(args->rho)*2+1;
+            kernel->width = kernel->height = CastDoubleToSizeT(fabs(args->rho))*2+1;
           kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
 
-          kernel->values=(MagickRealType *) MagickAssumeAligned(
-            AcquireAlignedMemory(kernel->width,kernel->height*
-            sizeof(*kernel->values)));
-          if (kernel->values == (MagickRealType *) NULL)
+          if (AcquireKernelValues(kernel) == MagickFalse)
             return(DestroyKernelInfo(kernel));
 
           for ( i=0, v=-kernel->y; v <= (ssize_t)kernel->y; v++)
@@ -1653,13 +1650,10 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
           if (args->rho < 1.0)
             kernel->width = kernel->height = 5;  /* default radius 2 */
           else
-            kernel->width = kernel->height = ((size_t)args->rho)*2+1;
+            kernel->width = kernel->height = CastDoubleToSizeT(args->rho)*2+1;
           kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
 
-          kernel->values=(MagickRealType *) MagickAssumeAligned(
-            AcquireAlignedMemory(kernel->width,kernel->height*
-            sizeof(*kernel->values)));
-          if (kernel->values == (MagickRealType *) NULL)
+          if (AcquireKernelValues(kernel) == MagickFalse)
             return(DestroyKernelInfo(kernel));
 
           /* set all kernel values along axises to given scale */
@@ -1675,13 +1669,10 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
           if (args->rho < 1.0)
             kernel->width = kernel->height = 5;  /* default radius 2 */
           else
-            kernel->width = kernel->height = ((size_t)args->rho)*2+1;
+            kernel->width = kernel->height = CastDoubleToSizeT(args->rho)*2+1;
           kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
 
-          kernel->values=(MagickRealType *) MagickAssumeAligned(
-            AcquireAlignedMemory(kernel->width,kernel->height*
-            sizeof(*kernel->values)));
-          if (kernel->values == (MagickRealType *) NULL)
+          if (AcquireKernelValues(kernel) == MagickFalse)
             return(DestroyKernelInfo(kernel));
 
           /* set all kernel values along axises to given scale */
@@ -1705,13 +1696,13 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
 
           if (args->rho < args->sigma)
             {
-              kernel->width = ((size_t)args->sigma)*2+1;
+              kernel->width = CastDoubleToSizeT(args->sigma)*2+1;
               limit1 = (ssize_t)(args->rho*args->rho);
               limit2 = (ssize_t)(args->sigma*args->sigma);
             }
           else
             {
-              kernel->width = ((size_t)args->rho)*2+1;
+              kernel->width = CastDoubleToSizeT(args->rho)*2+1;
               limit1 = (ssize_t)(args->sigma*args->sigma);
               limit2 = (ssize_t)(args->rho*args->rho);
             }
@@ -1720,10 +1711,7 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
 
           kernel->height = kernel->width;
           kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
-          kernel->values=(MagickRealType *) MagickAssumeAligned(
-            AcquireAlignedMemory(kernel->width,kernel->height*
-            sizeof(*kernel->values)));
-          if (kernel->values == (MagickRealType *) NULL)
+          if (AcquireKernelValues(kernel) == MagickFalse)
             return(DestroyKernelInfo(kernel));
 
           /* set a ring of points of 'scale' ( 0.0 for PeaksKernel ) */
@@ -2092,13 +2080,10 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
           if (args->rho < 1.0)
             kernel->width = kernel->height = 3;  /* default radius = 1 */
           else
-            kernel->width = kernel->height = ((size_t)args->rho)*2+1;
+            kernel->width = kernel->height = CastDoubleToSizeT(args->rho)*2+1;
           kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
 
-          kernel->values=(MagickRealType *) MagickAssumeAligned(
-            AcquireAlignedMemory(kernel->width,kernel->height*
-            sizeof(*kernel->values)));
-          if (kernel->values == (MagickRealType *) NULL)
+          if (AcquireKernelValues(kernel) == MagickFalse)
             return(DestroyKernelInfo(kernel));
 
           for ( i=0, v=-kernel->y; v <= (ssize_t)kernel->y; v++)
@@ -2113,13 +2098,10 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
           if (args->rho < 1.0)
             kernel->width = kernel->height = 3;  /* default radius = 1 */
           else
-            kernel->width = kernel->height = ((size_t)args->rho)*2+1;
+            kernel->width = kernel->height = CastDoubleToSizeT(args->rho)*2+1;
           kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
 
-          kernel->values=(MagickRealType *) MagickAssumeAligned(
-            AcquireAlignedMemory(kernel->width,kernel->height*
-            sizeof(*kernel->values)));
-          if (kernel->values == (MagickRealType *) NULL)
+          if (AcquireKernelValues(kernel) == MagickFalse)
             return(DestroyKernelInfo(kernel));
 
           for ( i=0, v=-kernel->y; v <= (ssize_t)kernel->y; v++)
@@ -2134,13 +2116,10 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
         if (args->rho < 2.0)
           kernel->width = kernel->height = 5;  /* default/minimum radius = 2 */
         else
-          kernel->width = kernel->height = ((size_t)args->rho)*2+1;
+          kernel->width = kernel->height = CastDoubleToSizeT(args->rho)*2+1;
         kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
 
-        kernel->values=(MagickRealType *) MagickAssumeAligned(
-          AcquireAlignedMemory(kernel->width,kernel->height*
-          sizeof(*kernel->values)));
-        if (kernel->values == (MagickRealType *) NULL)
+        if (AcquireKernelValues(kernel) == MagickFalse)
           return(DestroyKernelInfo(kernel));
 
         for ( i=0, v=-kernel->y; v <= (ssize_t)kernel->y; v++)
@@ -2160,13 +2139,10 @@ MagickExport KernelInfo *AcquireKernelBuiltIn(const KernelInfoType type,
         if (args->rho < 1.0)
           kernel->width = kernel->height = 3;  /* default radius = 1 */
         else
-          kernel->width = kernel->height = ((size_t)args->rho)*2+1;
+          kernel->width = kernel->height = CastDoubleToSizeT(args->rho)*2+1;
         kernel->x = kernel->y = (ssize_t) (kernel->width-1)/2;
 
-        kernel->values=(MagickRealType *) MagickAssumeAligned(
-          AcquireAlignedMemory(kernel->width,kernel->height*
-          sizeof(*kernel->values)));
-        if (kernel->values == (MagickRealType *) NULL)
+        if (AcquireKernelValues(kernel) == MagickFalse)
           return(DestroyKernelInfo(kernel));
 
         for ( i=0, v=-kernel->y; v <= (ssize_t)kernel->y; v++)
@@ -2229,9 +2205,7 @@ MagickExport KernelInfo *CloneKernelInfo(const KernelInfo *kernel)
   *new_kernel=(*kernel); /* copy values in structure */
 
   /* replace the values with a copy of the values */
-  new_kernel->values=(MagickRealType *) MagickAssumeAligned(
-    AcquireAlignedMemory(kernel->width,kernel->height*sizeof(*kernel->values)));
-  if (new_kernel->values == (MagickRealType *) NULL)
+  if (AcquireKernelValues(new_kernel) == MagickFalse)
     return(DestroyKernelInfo(new_kernel));
   for (i=0; i < (ssize_t) (kernel->width*kernel->height); i++)
     new_kernel->values[i]=kernel->values[i];
@@ -2639,7 +2613,7 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
     }
     default:
     {
-      ThrowMagickException(exception,GetMagickModule(),OptionWarning,
+      (void) ThrowMagickException(exception,GetMagickModule(),OptionWarning,
         "InvalidOption","`%s'","not a primitive morphology method");
       break;
     }
@@ -2750,7 +2724,7 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
                     count++;
                   }
                 k--;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
             else
               {
@@ -2766,19 +2740,19 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
                       count++;
                     }
                   k--;
-                  pixels+=GetPixelChannels(image);
+                  pixels+=(ptrdiff_t) GetPixelChannels(image);
                 }
               }
             if (fabs(pixel-(double) p[center+i]) >= MagickEpsilon)
               changes[id]++;
-            gamma=PerceptibleReciprocal(gamma);
+            gamma=MagickSafeReciprocal(gamma);
             if (count != 0)
               gamma*=(double) kernel->height/count;
             SetPixelChannel(morphology_image,channel,ClampToQuantum(gamma*
               pixel),q);
           }
-          p+=GetPixelChannels(image);
-          q+=GetPixelChannels(morphology_image);
+          p+=(ptrdiff_t) GetPixelChannels(image);
+          q+=(ptrdiff_t) GetPixelChannels(morphology_image);
         }
         if (SyncCacheViewAuthenticPixels(morphology_view,exception) == MagickFalse)
           status=MagickFalse;
@@ -2949,7 +2923,7 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
                     if (!IsNaN(*k))
                       pixel+=(*k)*(double) pixels[i];
                     k--;
-                    pixels+=GetPixelChannels(image);
+                    pixels+=(ptrdiff_t) GetPixelChannels(image);
                   }
                   pixels+=(image->columns-1)*GetPixelChannels(image);
                 }
@@ -2971,7 +2945,7 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
                     gamma+=alpha*(*k);
                   }
                 k--;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -2998,7 +2972,7 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
                       pixel=(double) pixels[i];
                   }
                 k++;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -3028,7 +3002,7 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
                       pixel=(double) pixels[i];
                   }
                 k--;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -3070,7 +3044,7 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
                         }
                   }
                 k++;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -3108,7 +3082,7 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
                       }
                   }
                 k++;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -3137,7 +3111,7 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
                       }
                   }
                 k--;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -3179,7 +3153,7 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
                       pixel=(double) pixels[i]+(*k);
                   }
                 k--;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -3194,13 +3168,13 @@ static ssize_t MorphologyPrimitive(const Image *image,Image *morphology_image,
             SetPixelChannel(morphology_image,channel,quantum_pixels[i],q);
             continue;
           }
-        gamma=PerceptibleReciprocal(gamma);
+        gamma=MagickSafeReciprocal(gamma);
         SetPixelChannel(morphology_image,channel,ClampToQuantum(gamma*pixel),q);
         if (fabs(pixel-(double) p[center+i]) >= MagickEpsilon)
           changes[id]++;
       }
-      p+=GetPixelChannels(image);
-      q+=GetPixelChannels(morphology_image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(morphology_image);
     }
     if (SyncCacheViewAuthenticPixels(morphology_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -3378,7 +3352,7 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
                       pixel=(double) pixels[i]+(*k);
                   }
                 k--;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -3392,7 +3366,7 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
                     pixel=(double) pixels[i]+(*k);
                 }
               k--;
-              pixels+=GetPixelChannels(image);
+              pixels+=(ptrdiff_t) GetPixelChannels(image);
             }
             break;
           }
@@ -3409,7 +3383,7 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
                       pixel=(double) pixels[i]+(*k);
                   }
                 k--;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -3423,7 +3397,7 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
                     pixel=(double) pixels[i]+(*k);
                 }
               k--;
-              pixels+=GetPixelChannels(image);
+              pixels+=(ptrdiff_t) GetPixelChannels(image);
             }
             break;
           }
@@ -3434,8 +3408,8 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
           changed++;
         q[i]=ClampToQuantum(pixel);
       }
-      p+=GetPixelChannels(image);
-      q+=GetPixelChannels(image);
+      p+=(ptrdiff_t) GetPixelChannels(image);
+      q+=(ptrdiff_t) GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(morphology_view,exception) == MagickFalse)
       status=MagickFalse;
@@ -3489,8 +3463,8 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
         status=MagickFalse;
         continue;
       }
-    p+=(image->columns-1)*GetPixelChannels(image);
-    q+=(image->columns-1)*GetPixelChannels(image);
+    p+=(ptrdiff_t) (image->columns-1)*GetPixelChannels(image);
+    q+=(ptrdiff_t) (image->columns-1)*GetPixelChannels(image);
     for (x=(ssize_t) image->columns-1; x >= 0; x--)
     {
       ssize_t
@@ -3542,7 +3516,7 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
                       pixel=(double) pixels[i]+(*k);
                   }
                 k--;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -3550,7 +3524,7 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
             pixels=q;
             for (u=offset.x+1; u < (ssize_t) kernel->width; u++)
             {
-              pixels+=GetPixelChannels(image);
+              pixels+=(ptrdiff_t) GetPixelChannels(image);
               if (!IsNaN(*k) && ((x+u-offset.x) < (ssize_t) image->columns))
                 {
                   if (((double) pixels[i]+(*k)) < pixel)
@@ -3573,7 +3547,7 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
                       pixel=(double) pixels[i]+(*k);
                   }
                 k--;
-                pixels+=GetPixelChannels(image);
+                pixels+=(ptrdiff_t) GetPixelChannels(image);
               }
               pixels+=(image->columns-1)*GetPixelChannels(image);
             }
@@ -3581,7 +3555,7 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
             pixels=q;
             for (u=offset.x+1; u < (ssize_t) kernel->width; u++)
             {
-              pixels+=GetPixelChannels(image);
+              pixels+=(ptrdiff_t) GetPixelChannels(image);
               if (!IsNaN(*k) && ((x+u-offset.x) < (ssize_t) image->columns))
                 {
                   if (((double) pixels[i]+(*k)) < pixel)
@@ -3598,7 +3572,7 @@ static ssize_t MorphologyPrimitiveDirect(Image *image,
           changed++;
         q[i]=ClampToQuantum(pixel);
       }
-      p-=GetPixelChannels(image);
+      p-=(ptrdiff_t)GetPixelChannels(image);
       q-=GetPixelChannels(image);
     }
     if (SyncCacheViewAuthenticPixels(morphology_view,exception) == MagickFalse)
@@ -3756,7 +3730,7 @@ MagickPrivate Image *MorphologyApply(const Image *image,
 
       if (verbose != MagickFalse)
         (void) (void) FormatLocaleFile(stderr,
-          "%s:%.20g.%.20g #%.20g => Changed %.20g\n",
+          "%s:%.17g.%.17g #%.17g => Changed %.17g\n",
           CommandOptionToMnemonic(MagickMorphologyOptions, method),
           1.0,0.0,1.0, (double) changed);
 
@@ -3904,11 +3878,11 @@ MagickPrivate Image *MorphologyApply(const Image *image,
         /* Extra information for debugging compound operations */
         if (verbose != MagickFalse) {
           if ( stage_limit > 1 )
-            (void) FormatLocaleString(v_info,MagickPathExtent,"%s:%.20g.%.20g -> ",
+            (void) FormatLocaleString(v_info,MagickPathExtent,"%s:%.17g.%.17g -> ",
              CommandOptionToMnemonic(MagickMorphologyOptions,method),(double)
              method_loop,(double) stage_loop);
           else if ( primitive != method )
-            (void) FormatLocaleString(v_info, MagickPathExtent, "%s:%.20g -> ",
+            (void) FormatLocaleString(v_info, MagickPathExtent, "%s:%.17g -> ",
               CommandOptionToMnemonic(MagickMorphologyOptions, method),(double)
               method_loop);
           else
@@ -3940,7 +3914,7 @@ MagickPrivate Image *MorphologyApply(const Image *image,
             if ( kernel_loop > 1 )
               (void) FormatLocaleFile(stderr, "\n"); /* add end-of-line from previous */
             (void) (void) FormatLocaleFile(stderr,
-              "%s%s%s:%.20g.%.20g #%.20g => Changed %.20g",
+              "%s%s%s:%.17g.%.17g #%.17g => Changed %.17g",
               v_info,CommandOptionToMnemonic(MagickMorphologyOptions,
               primitive),(this_kernel == rflt_kernel ) ? "*" : "",
               (double) (method_loop+kernel_loop-1),(double) kernel_number,
@@ -3962,7 +3936,7 @@ MagickPrivate Image *MorphologyApply(const Image *image,
         } /* End Loop 4: Iterate the kernel with primitive */
 
         if (verbose != MagickFalse && kernel_changed != (size_t)changed)
-          (void) FormatLocaleFile(stderr, "   Total %.20g",(double) kernel_changed);
+          (void) FormatLocaleFile(stderr, "   Total %.17g",(double) kernel_changed);
         if (verbose != MagickFalse && stage_loop < stage_limit)
           (void) FormatLocaleFile(stderr, "\n"); /* add end-of-line before looping */
 

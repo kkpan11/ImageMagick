@@ -23,7 +23,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -86,6 +86,9 @@ struct _StreamInfo
 
   StorageType
     storage_type;
+
+  size_t
+    length;
 
   unsigned char
     *pixels;
@@ -718,7 +721,8 @@ static const Quantum *GetVirtualPixelStream(const Image *image,
     number_pixels;
 
   size_t
-    length;
+    length,
+    packet_size;
 
   magick_unreferenced(virtual_pixel_method);
 
@@ -743,12 +747,16 @@ static const Quantum *GetVirtualPixelStream(const Image *image,
   /*
     Pixels are stored in a temporary buffer until they are synced to the cache.
   */
+  packet_size=MagickMax(cache_info->number_channels,1)*sizeof(Quantum);
+  if ((HeapOverflowCheckAdd(packet_size,cache_info->metacontent_extent) != MagickFalse) ||
+      (HeapOverflowSanityCheckGetSize(columns,rows,&length) != MagickFalse) ||
+      (HeapOverflowSanityCheckGetSize(length,packet_size+cache_info->metacontent_extent,&length) != MagickFalse))
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),
+        ResourceLimitError,"MemoryAllocationFailed","`%s'",image->filename);
+      return((Quantum *) NULL);
+    }
   number_pixels=(MagickSizeType) columns*rows;
-  length=(size_t) number_pixels*cache_info->number_channels*sizeof(Quantum);
-  if (cache_info->number_channels == 0)
-    length=(size_t) number_pixels*sizeof(Quantum);
-  if (cache_info->metacontent_extent != 0)
-    length+=number_pixels*cache_info->metacontent_extent;
   if (cache_info->pixels == (Quantum *) NULL)
     {
       cache_info->length=length;
@@ -895,7 +903,8 @@ static Quantum *QueueAuthenticPixelsStream(Image *image,const ssize_t x,
     number_pixels;
 
   size_t
-    length;
+    length,
+    packet_size;
 
   StreamHandler
     stream_handler;
@@ -944,12 +953,18 @@ static Quantum *QueueAuthenticPixelsStream(Image *image,const ssize_t x,
   */
   cache_info->columns=columns;
   cache_info->rows=rows;
+  packet_size=MagickMax(cache_info->number_channels,1)*sizeof(Quantum);
+  if ((HeapOverflowCheckAdd(packet_size,cache_info->metacontent_extent) !=
+       MagickFalse) ||
+      (HeapOverflowSanityCheckGetSize(columns,rows,&length) != MagickFalse) ||
+      (HeapOverflowSanityCheckGetSize(length,
+        packet_size+cache_info->metacontent_extent,&length) != MagickFalse))
+    {
+      (void) ThrowMagickException(exception,GetMagickModule(),
+        ResourceLimitError,"MemoryAllocationFailed","`%s'",image->filename);
+      return((Quantum *) NULL);
+    }
   number_pixels=(MagickSizeType) columns*rows;
-  length=(size_t) number_pixels*cache_info->number_channels*sizeof(Quantum);
-  if (cache_info->number_channels == 0)
-    length=(size_t) number_pixels*sizeof(Quantum);
-  if (cache_info->metacontent_extent != 0)
-    length+=number_pixels*cache_info->metacontent_extent;
   if (cache_info->pixels == (Quantum *) NULL)
     {
       cache_info->length=length;
@@ -1248,7 +1263,7 @@ static size_t WriteStreamImage(const Image *image,const void *pixels,
   assert(cache_info->signature == MagickCoreSignature);
   packet_size*=strlen(stream_info->map);
   length=packet_size*cache_info->columns*cache_info->rows;
-  if (image != stream_info->image)
+  if ((image != stream_info->image) || (length > stream_info->length))
     {
       ImageInfo
         *write_info;
@@ -1261,6 +1276,7 @@ static size_t WriteStreamImage(const Image *image,const void *pixels,
       if (stream_info->pixels == (unsigned char *) NULL)
         return(0);
       (void) memset(stream_info->pixels,0,length);
+      stream_info->length=length;
       stream_info->image=image;
       write_info=CloneImageInfo(stream_info->image_info);
       (void) SetImageInfo(write_info,1,stream_info->exception);
@@ -1291,9 +1307,23 @@ static size_t WriteStreamImage(const Image *image,const void *pixels,
     Write a portion of the pixel row to the stream.
   */
   (void) StreamImagePixels(stream_info,image,stream_info->exception);
-  length=packet_size*extract_info.width;
-  count=WriteBlob(stream_info->stream,length,stream_info->pixels+(ssize_t)
-    packet_size*extract_info.x);
+  count=1;
+  if ((extract_info.x < (ssize_t) image->columns) &&
+      ((extract_info.x + (ssize_t) extract_info.width) > 0))
+    {
+      ssize_t x = extract_info.x;
+      size_t width = extract_info.width;
+      if (x < 0)
+        {
+          width+=x;
+          x=0;
+        }
+      if ((x+(ssize_t) width) > (ssize_t) image->columns)
+        width=(size_t) ((ssize_t) image->columns-x);
+      length=packet_size*width;
+      count=WriteBlob(stream_info->stream,length,stream_info->pixels+
+        packet_size*x);
+    }
   stream_info->y++;
   return(count == 0 ? 0 : columns);
 }
@@ -1321,7 +1351,8 @@ MagickExport Image *StreamImage(const ImageInfo *image_info,
       image_info->filename);
   read_info=CloneImageInfo(image_info);
   stream_info->image_info=image_info;
-  stream_info->quantum_info=AcquireQuantumInfo(image_info,(Image *) NULL);
+  if (stream_info->quantum_info == (QuantumInfo *) NULL)
+    stream_info->quantum_info=AcquireQuantumInfo(image_info,(Image *) NULL);
   if (stream_info->quantum_info == (QuantumInfo *) NULL)
     {
       read_info=DestroyImageInfo(read_info);
@@ -1519,7 +1550,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToChar(GetPixelBlue(image,p));
             *q++=ScaleQuantumToChar(GetPixelGreen(image,p));
             *q++=ScaleQuantumToChar(GetPixelRed(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1534,7 +1565,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToChar(GetPixelGreen(image,p));
             *q++=ScaleQuantumToChar(GetPixelRed(image,p));
             *q++=ScaleQuantumToChar(GetPixelAlpha(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1549,7 +1580,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToChar(GetPixelGreen(image,p));
             *q++=ScaleQuantumToChar(GetPixelRed(image,p));
             *q++=ScaleQuantumToChar((Quantum) 0);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1561,7 +1592,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           for (x=0; x < (ssize_t) GetImageExtent(image); x++)
           {
             *q++=ScaleQuantumToChar(ClampToQuantum(GetPixelIntensity(image,p)));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1575,7 +1606,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToChar(GetPixelRed(image,p));
             *q++=ScaleQuantumToChar(GetPixelGreen(image,p));
             *q++=ScaleQuantumToChar(GetPixelBlue(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1590,7 +1621,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToChar(GetPixelGreen(image,p));
             *q++=ScaleQuantumToChar(GetPixelBlue(image,p));
             *q++=ScaleQuantumToChar(GetPixelAlpha(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1605,7 +1636,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToChar(GetPixelGreen(image,p));
             *q++=ScaleQuantumToChar(GetPixelBlue(image,p));
             *q++=ScaleQuantumToChar((Quantum) 0);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1663,7 +1694,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           }
           q++;
         }
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
       }
       break;
     }
@@ -1686,7 +1717,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
               quantum_info->scale+quantum_info->minimum);
             *q++=(double) ((QuantumScale*(double) GetPixelRed(image,p))*
               quantum_info->scale+quantum_info->minimum);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1705,7 +1736,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
               quantum_info->scale+quantum_info->minimum);
             *q++=(double) ((QuantumScale*(double) GetPixelAlpha(image,p))*
               quantum_info->scale+quantum_info->minimum);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1723,7 +1754,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=(double) ((QuantumScale*(double) GetPixelRed(image,p))*
               quantum_info->scale+quantum_info->minimum);
             *q++=0.0;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1736,7 +1767,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           {
             *q++=(double) ((QuantumScale*(double) GetPixelIntensity(image,p))*
               quantum_info->scale+quantum_info->minimum);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1753,7 +1784,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
               quantum_info->scale+quantum_info->minimum);
             *q++=(double) ((QuantumScale*(double) GetPixelBlue(image,p))*
               quantum_info->scale+quantum_info->minimum);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1772,7 +1803,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
               quantum_info->scale+quantum_info->minimum);
             *q++=(double) ((QuantumScale*(double) GetPixelAlpha(image,p))*
               quantum_info->scale+quantum_info->minimum);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1790,7 +1821,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=(double) ((QuantumScale*(double) GetPixelBlue(image,p))*
               quantum_info->scale+quantum_info->minimum);
             *q++=0.0;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1855,7 +1886,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           }
           q++;
         }
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
       }
       break;
     }
@@ -1878,7 +1909,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
               quantum_info->scale+quantum_info->minimum);
             *q++=(float) ((QuantumScale*(double) GetPixelRed(image,p))*
               quantum_info->scale+quantum_info->minimum);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1897,7 +1928,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
               quantum_info->scale+quantum_info->minimum);
             *q++=(float) ((QuantumScale*(double) GetPixelAlpha(image,p))*
               quantum_info->scale+quantum_info->minimum);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1915,7 +1946,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=(float) ((QuantumScale*(double) GetPixelRed(image,p))*
               quantum_info->scale+quantum_info->minimum);
             *q++=0.0;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1928,7 +1959,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           {
             *q++=(float) ((QuantumScale*(double) GetPixelIntensity(image,p))*
               quantum_info->scale+quantum_info->minimum);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1945,7 +1976,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
               quantum_info->scale+quantum_info->minimum);
             *q++=(float) ((QuantumScale*(double) GetPixelBlue(image,p))*
               quantum_info->scale+quantum_info->minimum);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1964,7 +1995,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
               quantum_info->scale+quantum_info->minimum);
             *q++=(float) ((QuantumScale*(double) GetPixelAlpha(image,p))*
               quantum_info->scale+quantum_info->minimum);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -1982,7 +2013,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=(float) ((QuantumScale*(double) GetPixelBlue(image,p))*
               quantum_info->scale+quantum_info->minimum);
             *q++=0.0;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2047,7 +2078,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           }
           q++;
         }
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
       }
       break;
     }
@@ -2067,7 +2098,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLong(GetPixelBlue(image,p));
             *q++=ScaleQuantumToLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLong(GetPixelRed(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2082,7 +2113,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLong(GetPixelRed(image,p));
             *q++=ScaleQuantumToLong(GetPixelAlpha(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2097,7 +2128,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLong(GetPixelRed(image,p));
             *q++=0;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2109,7 +2140,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           for (x=0; x < (ssize_t) GetImageExtent(image); x++)
           {
             *q++=ScaleQuantumToLong(ClampToQuantum(GetPixelIntensity(image,p)));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2123,7 +2154,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLong(GetPixelRed(image,p));
             *q++=ScaleQuantumToLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLong(GetPixelBlue(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2138,7 +2169,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLong(GetPixelBlue(image,p));
             *q++=ScaleQuantumToLong(GetPixelAlpha(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2153,7 +2184,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLong(GetPixelBlue(image,p));
             *q++=0;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2211,7 +2242,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           }
           q++;
         }
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
       }
       break;
     }
@@ -2231,7 +2262,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLongLong(GetPixelBlue(image,p));
             *q++=ScaleQuantumToLongLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLongLong(GetPixelRed(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2246,7 +2277,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLongLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLongLong(GetPixelRed(image,p));
             *q++=ScaleQuantumToLongLong(GetPixelAlpha(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2261,7 +2292,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLongLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLongLong(GetPixelRed(image,p));
             *q++=0U;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2274,7 +2305,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           {
             *q++=ScaleQuantumToLongLong(ClampToQuantum(
               GetPixelIntensity(image,p)));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2288,7 +2319,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLongLong(GetPixelRed(image,p));
             *q++=ScaleQuantumToLongLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLongLong(GetPixelBlue(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2303,7 +2334,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLongLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLongLong(GetPixelBlue(image,p));
             *q++=ScaleQuantumToLongLong(GetPixelAlpha(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2318,7 +2349,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToLongLong(GetPixelGreen(image,p));
             *q++=ScaleQuantumToLongLong(GetPixelBlue(image,p));
             *q++=0U;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2377,7 +2408,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           }
           q++;
         }
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
       }
       break;
     }
@@ -2397,7 +2428,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=GetPixelBlue(image,p);
             *q++=GetPixelGreen(image,p);
             *q++=GetPixelRed(image,p);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2412,7 +2443,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=GetPixelGreen(image,p);
             *q++=GetPixelRed(image,p);
             *q++=GetPixelAlpha(image,p);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2427,7 +2458,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=GetPixelGreen(image,p);
             *q++=GetPixelRed(image,p);
             *q++=(Quantum) 0;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2439,7 +2470,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           for (x=0; x < (ssize_t) GetImageExtent(image); x++)
           {
             *q++=ClampToQuantum(GetPixelIntensity(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2453,7 +2484,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=GetPixelRed(image,p);
             *q++=GetPixelGreen(image,p);
             *q++=GetPixelBlue(image,p);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2468,7 +2499,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=GetPixelGreen(image,p);
             *q++=GetPixelBlue(image,p);
             *q++=GetPixelAlpha(image,p);
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2483,7 +2514,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=GetPixelGreen(image,p);
             *q++=GetPixelBlue(image,p);
             *q++=(Quantum) 0;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2541,7 +2572,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           }
           q++;
         }
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
       }
       break;
     }
@@ -2561,7 +2592,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToShort(GetPixelBlue(image,p));
             *q++=ScaleQuantumToShort(GetPixelGreen(image,p));
             *q++=ScaleQuantumToShort(GetPixelRed(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2576,7 +2607,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToShort(GetPixelGreen(image,p));
             *q++=ScaleQuantumToShort(GetPixelRed(image,p));
             *q++=ScaleQuantumToShort(GetPixelAlpha(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2591,7 +2622,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToShort(GetPixelGreen(image,p));
             *q++=ScaleQuantumToShort(GetPixelRed(image,p));
             *q++=0;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2604,7 +2635,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           {
             *q++=ScaleQuantumToShort(ClampToQuantum(
               GetPixelIntensity(image,p)));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2618,7 +2649,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToShort(GetPixelRed(image,p));
             *q++=ScaleQuantumToShort(GetPixelGreen(image,p));
             *q++=ScaleQuantumToShort(GetPixelBlue(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2633,7 +2664,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToShort(GetPixelGreen(image,p));
             *q++=ScaleQuantumToShort(GetPixelBlue(image,p));
             *q++=ScaleQuantumToShort(GetPixelAlpha(image,p));
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2648,7 +2679,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
             *q++=ScaleQuantumToShort(GetPixelGreen(image,p));
             *q++=ScaleQuantumToShort(GetPixelBlue(image,p));
             *q++=0;
-            p+=GetPixelChannels(image);
+            p+=(ptrdiff_t) GetPixelChannels(image);
           }
           break;
         }
@@ -2707,7 +2738,7 @@ static MagickBooleanType StreamImagePixels(const StreamInfo *stream_info,
           }
           q++;
         }
-        p+=GetPixelChannels(image);
+        p+=(ptrdiff_t) GetPixelChannels(image);
       }
       break;
     }

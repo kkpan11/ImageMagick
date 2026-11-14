@@ -22,7 +22,7 @@
 %  You may not use this file except in compliance with the License.  You may  %
 %  obtain a copy of the License at                                            %
 %                                                                             %
-%    https://imagemagick.org/script/license.php                               %
+%    https://imagemagick.org/license/                                         %
 %                                                                             %
 %  Unless required by applicable law or agreed to in writing, software        %
 %  distributed under the License is distributed on an "AS IS" BASIS,          %
@@ -52,6 +52,7 @@
 #include "MagickCore/list.h"
 #include "MagickCore/magick.h"
 #include "MagickCore/memory_.h"
+#include "MagickCore/memory-private.h"
 #include "MagickCore/module.h"
 #include "MagickCore/monitor.h"
 #include "MagickCore/monitor-private.h"
@@ -246,14 +247,14 @@ static Image *ReadJNXImage(const ImageInfo *image_info,ExceptionInfo *exception)
         northeast,
         southwest;
 
+      size_t
+        tile_length;
+
       ssize_t
         count;
 
       unsigned char
         *blob;
-
-      unsigned int
-        tile_length;
 
       northeast.x=180.0*ReadBlobLSBSignedLong(image)/0x7fffffff;
       northeast.y=180.0*ReadBlobLSBSignedLong(image)/0x7fffffff;
@@ -279,6 +280,11 @@ static Image *ReadJNXImage(const ImageInfo *image_info,ExceptionInfo *exception)
       /*
         Read a tile.
       */
+      if (HeapOverflowCheckAdd(tile_length,2) != MagickFalse)
+        {
+          images=DestroyImageList(images);
+          ThrowReaderException(ResourceLimitError,"MemoryAllocationFailed");
+        }
       if (((MagickSizeType) tile_length) > GetBlobSize(image))
         {
           images=DestroyImageList(images);
@@ -311,9 +317,9 @@ static Image *ReadJNXImage(const ImageInfo *image_info,ExceptionInfo *exception)
       tile_image->depth=8;
       (void) CopyMagickString(tile_image->magick,image->magick,
         MagickPathExtent);
-      (void) FormatImageProperty(tile_image,"jnx:northeast","%.20g,%.20g",
+      (void) FormatImageProperty(tile_image,"jnx:northeast","%.17g,%.17g",
         northeast.x,northeast.y);
-      (void) FormatImageProperty(tile_image,"jnx:southwest","%.20g,%.20g",
+      (void) FormatImageProperty(tile_image,"jnx:southwest","%.17g,%.17g",
         southwest.x,southwest.y);
       AppendImageToList(&images,tile_image);
     }
